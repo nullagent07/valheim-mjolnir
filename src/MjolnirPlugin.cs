@@ -22,7 +22,7 @@ namespace Mjolnir
     {
         public const string PluginGuid = "morovin.mjolnir";
         public const string PluginName = "Mjolnir - returning thunder hammer";
-        public const string PluginVersion = "0.3.0";
+        public const string PluginVersion = "0.3.1";
 
         public const string ItemPrefabName = "Mjolnir";
         public const string ItemNameToken = "$item_mjolnir";
@@ -30,6 +30,7 @@ namespace Mjolnir
         public const string MsgReturnedToken = "$msg_mjolnir_returned";
         public const string MsgDeployedToken = "$msg_mjolnir_deployed";
         public const string MsgRecallToken = "$msg_mjolnir_recall";
+        public const string MsgRestyledToken = "$msg_mjolnir_restyled";
 
         // Temporary shim: keep old Gungnir prefabs resolvable so `clean` can remove
         // the leftover world drops / inventory items from v0.1.x. Remove in a later version.
@@ -42,6 +43,8 @@ namespace Mjolnir
         internal static string CmdPath;
 
         private static bool s_itemCreated;
+        private static GameObject s_itemPrefab;
+        private static GameObject s_projectilePrefab;
         private Harmony m_harmony;
 
         private void Awake()
@@ -95,6 +98,8 @@ namespace Mjolnir
                 loc.AddTranslation("Russian", "msg_mjolnir_deployed", "Мьёльнир ждёт зова. Наведи на него курсор и нажми вторичную атаку.");
                 loc.AddTranslation("English", "msg_mjolnir_recall", "Mjölnir returns!");
                 loc.AddTranslation("Russian", "msg_mjolnir_recall", "Мьёльнир возвращается!");
+                loc.AddTranslation("English", "msg_mjolnir_restyled", "Mjölnir's look updated - re-equip it to see.");
+                loc.AddTranslation("Russian", "msg_mjolnir_restyled", "Вид Мьёльнира обновлён — переснарядись, чтобы увидеть.");
 
                 // old Gungnir shim strings
                 loc.AddTranslation("English", "item_gungnir", "Gungnir (old)");
@@ -157,6 +162,7 @@ namespace Mjolnir
                     return;
                 }
                 FileLog("Mjolnir item created from " + baseName);
+                s_itemPrefab = item.ItemDrop.gameObject;
 
                 var shared = item.ItemDrop.m_itemData.m_shared;
 
@@ -211,6 +217,7 @@ namespace Mjolnir
                             AppendEffect(projComp.m_hitEffects, "fx_lightningweapon_hit");
                         }
                         PrefabManager.Instance.AddPrefab(projClone);
+                        s_projectilePrefab = projClone;
                         shared.m_secondaryAttack.m_attackProjectile = projClone;
                         FileLog("mjolnir_projectile created from " + projSrc.name + " and registered (impact wave added)");
                     }
@@ -246,35 +253,62 @@ namespace Mjolnir
             }
         }
 
+        /// <summary>Gets the weapon's actual model root: the attach/attachobj child, or null.</summary>
+        private static GameObject GetWeaponModel(GameObject itemGo)
+        {
+            if (itemGo == null) return null;
+            Transform attach = itemGo.transform.Find("attach");
+            if (attach == null) return null;
+            Transform obj = attach.Find("attachobj");
+            return obj != null ? obj.gameObject : attach.gameObject;
+        }
+
         /// <summary>
-        /// Copy the item's held model ("attach" child) onto the projectile and make it spin.
-        /// The original projectile meshes are hidden but its particles/sounds stay.
+        /// Copy a weapon's held model onto the projectile and make it spin.
+        /// On firstTime the projectile's original meshes are hidden (particles/sounds stay);
+        /// on restyle the previous model copy is replaced.
         /// </summary>
-        private static void ReskinProjectile(GameObject proj, GameObject itemGo)
+        private static void ReskinProjectile(GameObject proj, GameObject itemGo, bool firstTime = true, float scale = 1f)
         {
             try
             {
-                Transform srcAttach = itemGo.transform.Find("attach");
-                GameObject srcModel = srcAttach != null ? srcAttach.gameObject : itemGo;
-
+                GameObject srcModel = GetWeaponModel(itemGo);
+                if (srcModel == null)
+                {
+                    FileLog("reskin: no attach model on " + (itemGo != null ? itemGo.name : "null"));
+                    return;
+                }
                 var projComp = proj.GetComponent<Projectile>();
-                GameObject oldVisual = projComp != null ? projComp.m_visual : null;
+                if (projComp == null)
+                {
+                    FileLog("reskin: projectile has no Projectile component");
+                    return;
+                }
+
+                if (firstTime)
+                {
+                    GameObject oldVisual = projComp.m_visual;
+                    if (oldVisual != null)
+                    {
+                        foreach (var r in oldVisual.GetComponentsInChildren<MeshRenderer>(true)) r.enabled = false;
+                        foreach (var r in oldVisual.GetComponentsInChildren<SkinnedMeshRenderer>(true)) r.enabled = false;
+                    }
+                }
+                else
+                {
+                    var prev = proj.transform.Find("mjolnir_visual");
+                    if (prev != null) UnityEngine.Object.DestroyImmediate(prev.gameObject);
+                }
 
                 var modelCopy = UnityEngine.Object.Instantiate(srcModel, proj.transform, false);
                 modelCopy.name = "mjolnir_visual";
                 modelCopy.transform.localPosition = Vector3.zero;
                 // lay the weapon along the flight direction (handle forward instead of upright)
                 modelCopy.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+                modelCopy.transform.localScale = Vector3.one * scale;
                 modelCopy.SetActive(true);
 
-                foreach (var r in modelCopy.GetComponentsInChildren<MeshRenderer>(true)) r.enabled = true;
-
-                if (oldVisual != null && oldVisual != modelCopy)
-                {
-                    foreach (var r in oldVisual.GetComponentsInChildren<MeshRenderer>(true)) r.enabled = false;
-                    foreach (var r in oldVisual.GetComponentsInChildren<SkinnedMeshRenderer>(true)) r.enabled = false;
-                }
-                else if (oldVisual == null)
+                if (firstTime && projComp.m_visual == null)
                 {
                     foreach (var r in proj.GetComponentsInChildren<MeshRenderer>(true))
                     {
@@ -286,16 +320,95 @@ namespace Mjolnir
                     }
                 }
 
-                if (projComp != null)
-                {
-                    projComp.m_visual = modelCopy;
-                    projComp.m_rotateVisual = 720f;
-                }
-                FileLog("projectile reskinned to hammer model (source=" + srcModel.name + ")");
+                projComp.m_visual = modelCopy;
+                projComp.m_rotateVisual = 720f;
+                FileLog("projectile reskinned from " + srcModel.name + (firstTime ? "" : " (restyle)") + " scale=" + scale);
             }
             catch (Exception e)
             {
                 FileLog("ReskinProjectile failed: " + e.Message);
+            }
+        }
+
+        /// <summary>Replaces the held/dropped model of the Mjolnir item with another weapon's model.</summary>
+        private static void ReplaceAttachModel(GameObject itemGo, GameObject sourceGo, float scale)
+        {
+            try
+            {
+                GameObject srcModel = GetWeaponModel(sourceGo);
+                if (srcModel == null)
+                {
+                    FileLog("restyle: no attach model on " + (sourceGo != null ? sourceGo.name : "null"));
+                    return;
+                }
+                Transform attach = itemGo.transform.Find("attach");
+                if (attach == null)
+                {
+                    var go = new GameObject("attach");
+                    attach = go.transform;
+                    attach.SetParent(itemGo.transform, false);
+                }
+                for (int i = attach.childCount - 1; i >= 0; i--)
+                {
+                    UnityEngine.Object.DestroyImmediate(attach.GetChild(i).gameObject);
+                }
+                var copy = UnityEngine.Object.Instantiate(srcModel, attach, false);
+                copy.name = "attachobj";
+                copy.transform.localPosition = Vector3.zero;
+                copy.transform.localRotation = Quaternion.identity;
+                copy.transform.localScale = Vector3.one * scale;
+                copy.SetActive(true);
+                FileLog("item model replaced with " + srcModel.name + " scale=" + scale);
+            }
+            catch (Exception e)
+            {
+                FileLog("ReplaceAttachModel failed: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Live model swap: `mjolnir restyle <vanillaPrefabName> [scale]`, e.g.
+        /// `restyle SledgeDemolisher 0.6`. Re-equip the weapon to see the change.
+        /// </summary>
+        internal static void Restyle(string args)
+        {
+            try
+            {
+                var parts = args.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 1)
+                {
+                    FileLog("restyle usage: restyle <prefab> [scale]");
+                    return;
+                }
+                string prefabName = parts[0];
+                float scale = 1f;
+                if (parts.Length >= 2
+                    && !float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out scale))
+                {
+                    scale = 1f;
+                }
+
+                var src = PrefabManager.Instance.GetPrefab(prefabName);
+                if (src == null)
+                {
+                    FileLog("restyle: prefab not found: " + prefabName);
+                    return;
+                }
+                if (s_itemPrefab != null) ReplaceAttachModel(s_itemPrefab, src, scale);
+                else FileLog("restyle: item prefab not created yet");
+                if (s_projectilePrefab != null) ReskinProjectile(s_projectilePrefab, src, false, scale);
+                else FileLog("restyle: projectile prefab not created yet");
+
+                var player = Player.m_localPlayer;
+                if (player != null)
+                {
+                    player.Message(MessageHud.MessageType.TopLeft, MsgRestyledToken, 0, null);
+                }
+                FileLog("restyle done: " + prefabName + " scale=" + scale + " (re-equip to see the change)");
+            }
+            catch (Exception e)
+            {
+                FileLog("restyle error: " + e);
             }
         }
 

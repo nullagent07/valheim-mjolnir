@@ -44,7 +44,14 @@ namespace Mjolnir
                             MjolnirPlugin.FileLog("pong");
                             break;
                         default:
-                            MjolnirPlugin.FileLog("unknown cmd: " + line);
+                            if (line.StartsWith("restyle "))
+                            {
+                                MjolnirPlugin.Restyle(line.Substring("restyle ".Length).Trim());
+                            }
+                            else
+                            {
+                                MjolnirPlugin.FileLog("unknown cmd: " + line);
+                            }
                             break;
                     }
                 }

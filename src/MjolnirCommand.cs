@@ -8,7 +8,7 @@ namespace Mjolnir
     public class MjolnirCommand : ConsoleCommand
     {
         public override string Name => "mjolnir";
-        public override string Help => "mjolnir give - add Mjolnir to your inventory; mjolnir clean - remove leftover drops";
+        public override string Help => "mjolnir give | mjolnir clean | mjolnir restyle <prefab> [scale]";
 
         public override void Run(string[] args)
         {
@@ -20,6 +20,16 @@ namespace Mjolnir
                     break;
                 case "clean":
                     MjolnirPlugin.CleanWorldDrops();
+                    break;
+                case "restyle":
+                    if (args.Length >= 2)
+                    {
+                        MjolnirPlugin.Restyle(string.Join(" ", args, 1, args.Length - 1));
+                    }
+                    else
+                    {
+                        MjolnirPlugin.FileLog("usage: mjolnir restyle <prefab> [scale]");
+                    }
                     break;
                 default:
                     MjolnirPlugin.FileLog(Help);

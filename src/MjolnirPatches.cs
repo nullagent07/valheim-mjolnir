@@ -77,7 +77,13 @@ namespace Mjolnir
                 if (!secondaryAttack) return true;
                 var player = __instance as Player;
                 if (player == null || player != Player.m_localPlayer) return true;
-                if (player.GetCurrentWeapon() != null) return true; // armed: vanilla secondary
+
+                // Only intercept while unarmed. Note: GetCurrentWeapon() returns the
+                // m_unarmedWeapon (fists with a kick) when hands are empty, so check that too.
+                var weapon = player.GetCurrentWeapon();
+                bool unarmed = weapon == null
+                    || (player.m_unarmedWeapon != null && weapon == player.m_unarmedWeapon.m_itemData);
+                if (!unarmed) return true;
 
                 var deployed = MjolnirProjectile.Current;
                 if (deployed != null && deployed.TrySummon(player))
