@@ -1,12 +1,12 @@
 using UnityEngine;
 
-namespace Gungnir
+namespace Mjolnir
 {
     /// <summary>
-    /// Attached by GungnirPatches to the thrown Gungnir projectile.
+    /// Attached by MjolnirPatches to the thrown Mjolnir projectile.
     /// Flying -> (hit or timeout) -> return to the owner's right hand -> catch.
     /// </summary>
-    public class GungnirProjectile : MonoBehaviour
+    public class MjolnirProjectile : MonoBehaviour
     {
         private enum State
         {
@@ -35,10 +35,10 @@ namespace Gungnir
 
         internal static void Attach(GameObject go, Character owner, ItemDrop.ItemData item)
         {
-            var comp = go.GetComponent<GungnirProjectile>();
+            var comp = go.GetComponent<MjolnirProjectile>();
             if (comp == null)
             {
-                comp = go.AddComponent<GungnirProjectile>();
+                comp = go.AddComponent<MjolnirProjectile>();
             }
             comp.m_owner = owner;
             comp.m_item = item;
@@ -83,7 +83,7 @@ namespace Gungnir
             }
             catch (System.Exception e)
             {
-                GungnirPlugin.FileLog("projectile update error: " + e);
+                MjolnirPlugin.FileLog("projectile update error: " + e);
                 DropSafely("update error");
             }
         }
@@ -99,7 +99,7 @@ namespace Gungnir
             {
                 m_projectile.enabled = false;
             }
-            GungnirPlugin.FileLog("return start (" + reason + ")");
+            MjolnirPlugin.FileLog("return start (" + reason + ")");
         }
 
         private Vector3 CatchPoint()
@@ -139,7 +139,7 @@ namespace Gungnir
             if (dir.sqrMagnitude > 0.0001f)
             {
                 transform.rotation = Quaternion.LookRotation(dir);
-                // tumble the spear while it flies back so the return reads as an animation
+                // tumble the hammer while it flies back so the return reads as an animation
                 transform.Rotate(Vector3.right, SpinSpeed * Time.deltaTime, Space.Self);
             }
         }
@@ -155,22 +155,24 @@ namespace Gungnir
                 {
                     if (inv.AddItem(m_item))
                     {
-                        GungnirPlugin.FileLog("catch: returned to inventory");
+                        MjolnirPlugin.FileLog("catch: returned to inventory");
                     }
                     else
                     {
                         ItemDrop.DropItem(m_item, m_item.m_stack,
                             player.transform.position + player.transform.forward * 0.7f + Vector3.up * 0.5f,
                             Quaternion.identity);
-                        GungnirPlugin.FileLog("catch: inventory full, dropped at feet");
+                        MjolnirPlugin.FileLog("catch: inventory full, dropped at feet");
                     }
                 }
                 else
                 {
-                    GungnirPlugin.FileLog("catch: already in inventory (no duplicate)");
+                    MjolnirPlugin.FileLog("catch: already in inventory (no duplicate)");
                 }
-                player.Message(MessageHud.MessageType.TopLeft, GungnirPlugin.MsgReturnedToken, 0,
+                player.Message(MessageHud.MessageType.TopLeft, MjolnirPlugin.MsgReturnedToken, 0,
                     m_item != null ? m_item.GetIcon() : null);
+                MjolnirPlugin.PlayFxAt("sfx_mistlands_thunder", player.transform.position);
+                MjolnirPlugin.PlayFxAt("fx_lightningweapon_hit", CatchPoint());
             }
             else
             {
@@ -178,7 +180,7 @@ namespace Gungnir
                 {
                     ItemDrop.DropItem(m_item, m_item.m_stack, transform.position, Quaternion.identity);
                 }
-                GungnirPlugin.FileLog("catch: non-player owner, dropped");
+                MjolnirPlugin.FileLog("catch: non-player owner, dropped");
             }
             DestroySelf();
         }
@@ -199,10 +201,10 @@ namespace Gungnir
                 }
                 catch (System.Exception e)
                 {
-                    GungnirPlugin.FileLog("drop fail: " + e.Message);
+                    MjolnirPlugin.FileLog("drop fail: " + e.Message);
                 }
             }
-            GungnirPlugin.FileLog("drop safely (" + reason + ")");
+            MjolnirPlugin.FileLog("drop safely (" + reason + ")");
             DestroySelf();
         }
 
@@ -220,7 +222,7 @@ namespace Gungnir
 
         private void OnDestroy()
         {
-            // Safety net: the spear must never be lost.
+            // Safety net: the hammer must never be lost.
             if (m_state != State.Done && m_item != null)
             {
                 try

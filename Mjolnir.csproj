@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
-    <AssemblyName>Gungnir</AssemblyName>
-    <RootNamespace>Gungnir</RootNamespace>
-    <Version>0.1.0</Version>
+    <AssemblyName>Mjolnir</AssemblyName>
+    <RootNamespace>Mjolnir</RootNamespace>
+    <Version>0.2.0</Version>
     <LangVersion>latest</LangVersion>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

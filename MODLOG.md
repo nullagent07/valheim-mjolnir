@@ -1,100 +1,87 @@
-# MODLOG — Gungnir (возвращающееся копьё для Valheim)
+# MODLOG — Mjolnir (возвращающийся молот с молниями для Valheim)
 
-Журнал разработки. Ведётся по правилам universal-modder (`skills/mod-any-game`).
-Рабочая папка: `/home/deck/valheim-mods/gungnir`. Декомпиляция (вне репо, не публиковать): `/home/deck/valheim-decomp`.
+> Проект начинался как «Gungnir» — возвращающееся копьё (v0.1.x, проверено в игре). 2026-10-05 по просьбе игрока **пивот на Мьёльнир**: молот с молниями, который возвращается в руку.
 
 ## Идея
 
-Копьё «Гунгнир»: кидаешь — оно пробивает/бьёт цель, не падает на землю, а возвращается в руку бросившему.
+Мьёльнир: молот, который кидаешь (вторичная атака) — он бьёт молниями, не падает на землю, а с вращением возвращается в руку. Melee-удары тоже искрят молниями. Старые тестовые копии копья из мира убираются командой `clean`.
 
 ## Факты окружения
 
-- Игра: Valheim 1.0, Steam appid **892970**, buildid **25527674**, установлена нативно под Linux (Steam Deck): `/home/deck/.local/share/Steam/steamapps/common/Valheim`, бинарь `valheim.x86_64` (ELF x86-64), `UnityPlayer.so`.
-- Движок: **Unity 6000.0.75f1 (Unity 6)**, backend **Mono**.
-- Код игры: `valheim_Data/Managed/assembly_valheim.dll` (2.5 МБ, основной), `Assembly-CSharp.dll` (23 КБ, сэмплы/заглушки), `assembly_utils.dll` (234 КБ).
-- Античит: нет. Сейвы: `~/.config/unity3d/IronGate/Valheim/` (миры, персонажи). Лог игры: там же `Player.log`.
-- Загрузчиков мод не установлено на момент старта.
+- Игра: Valheim 1.0, Steam appid **892970**, buildid **25527674**, нативная Linux-сборка (Steam Deck): `/home/deck/.local/share/Steam/steamapps/common/Valheim`, бинарь `valheim.x86_64`.
+- Движок: **Unity 6000.0.75f1 (Unity 6)**, backend **Mono**. Код игры — `valheim_Data/Managed/assembly_valheim.dll` (Assembly-CSharp.dll почти пуст).
+- Античит: нет. Сейвы: `~/.config/unity3d/IronGate/Valheim/`. Лог игры: там же `Player.log`.
+- Декомпиляция (вне репо, не публиковать): `/home/deck/valheim-decomp` (`valheim/`, `jotunn/`).
 
-## Стек моддинга (актуальный под 1.0)
+## Стек моддинга
 
-- **BepInExPack_Valheim 5.4.2351** (denikson, поддерживают Azumatt/Vapok/Margmas; кастомный BepInEx 5.4.23.5, обновлён под 1.0). Есть Linux-скрипт `start_game_bepinex.sh` + `libdoorstop_x64.so`. Запуск через Steam launch options: `./start_game_bepinex.sh %command%`.
-- **Jotunn 2.30.2** (ValheimModding), собран под **net462** → наш плагин собираем под **net472**.
-- .NET SDK 8.0.425 установлен в `~/.dotnet` (симлинк в `~/.local/bin/dotnet`). `ilspycmd 8.2` (запуск с `DOTNET_ROOT=~/.dotnet`, `DOTNET_ROLL_FORWARD=LatestMajor`).
-- Стейдж пакетов: `/home/deck/valheim-mods/_stage/{bepinex,jotunn}`.
+- **BepInExPack_Valheim 5.4.2351** + Linux-скрипт `start_game_bepinex.sh` (`./start_game_bepinex.sh %command%` или напрямую).
+- **Jotunn 2.30.2** (net462) → плагин собирается под **net472** (+ `Microsoft.NETFramework.ReferenceAssemblies`).
+- .NET SDK 8.0.425 в `~/.dotnet`; `ilspycmd 8.2` (нужны `DOTNET_ROOT` и `DOTNET_ROLL_FORWARD=LatestMajor`).
+- Стейдж: `/home/deck/valheim-mods/_stage/{bepinex,jotunn}`. Проект: `/home/deck/valheim-mods/mjolnir`.
 
-## Что выяснено из кода (assembly_valheim, декомпиляция)
+## Что выяснено из кода (assembly_valheim)
 
-### Бросок копья
-- `Attack.m_attackType == AttackType.Projectile` → `ProjectileAttackTriggered()` → `FireProjectileBurst()`.
-- `FireProjectileBurst()`: `Instantiate(m_attackProjectile)` → строит `HitData` из `m_weapon` → `IProjectile.Setup(m_character, velocity, hitNoise, hitData, m_weapon, m_lastUsedAmmo)`; запоминает `m_weapon.m_lastProjectile`.
-- `Attack.m_consumeItem == true` → `ConsumeItem()` (Attack.cs ~656/672): `UnequipItem` + `Inventory.RemoveItem(m_weapon)` — **копьё покидает инвентарь в момент броска**.
-- Поля `Attack` (публичные): `m_attackProjectile` (линия 210), `m_consumeItem` (66), `m_attackType` (54).
+### Механика броска (общая для копий)
+- `Attack.m_attackType == AttackType.Projectile` → `FireProjectileBurst()`: `Instantiate(m_attackProjectile)` → `IProjectile.Setup(owner, velocity, hitNoise, hitData, m_weapon, ammo)`.
+- У копья бросок — **вторичная атака** (`SharedData.m_secondaryAttack`), primary `m_attack` — горизонтальный удар.
+- `Attack.m_consumeItem` → `ConsumeItem()`: `UnequipItem` + `Inventory.RemoveItem(m_weapon)` — предмет покидает инвентарь при броске.
 
-### Полёт снаряда (`Projectile.cs`)
-- Публичные поля, важные для нас: `m_respawnItemOnHit` (105), `m_stayAfterHitStatic` (65), `m_stayAfterHitDynamic` (67), `m_attachToRigidBody` (71), `m_attachToClosestBone` (73), `m_ttl` (53), `m_spawnOnHit` (109), `m_owner`/`m_weapon` — **приватные**, но приходят в `Setup(...)`.
-- `Setup(owner, velocity, hitNoise, hitData, item, ammo)`: `m_respawnItemOnHit → m_spawnItem = item`; `m_startPoint`; `m_hasLeftShields`.
-- `FixedUpdate` (только у владельца ZDO): гравитация/драг, raycast по маске, TTL (`if m_ttl > 0`), `ShieldGenerator.CheckProjectile`.
-- `OnHit(collider, hitPoint, water, normal)`: урон (`destructible.Damage(hitData)`), эффекты, `SpawnOnHit` → при `m_spawnItem != null` вызывает `ItemDrop.DropItem(item, 1, pos, rot)`; затем `m_didHit = true`, `m_ttl = m_stayTTL`; уничтожение снаряда: по rigidbody-ветке `if (!m_stayAfterHitDynamic) Destroy` либо `if (!m_stayAfterHitStatic) Destroy`. Есть `RPC_OnHit`, `RPC_Attach`.
-- `m_onHit` — обычный делегат `OnProjectileHit(Collider, Vector3, bool)` (публичное поле): можно и без Harmony, но выбраны Harmony-патчи.
+### Projectile (снаряд)
+- Поля: `m_respawnItemOnHit` (дроп предмета), `m_stayAfterHitStatic/Dynamic` (не уничтожаться), `m_attachToRigidBody/Bone`, `m_ttl`, `m_visual`, `m_rotateVisual`, `m_hitEffects`.
+- `Setup` читает `m_respawnItemOnHit` и запоминает `m_spawnItem` **внутри тела** — патчить только Prefix'ом.
+- `OnHit` → урон → `SpawnOnHit` (при `m_spawnItem` вызывает `ItemDrop.DropItem`, а он **клонирует** ItemData) → `m_ttl = m_stayTTL` → уничтожение, если stay-флаги false.
+- `ItemDrop.DropItem(item, amount, pos, rot)`; `Inventory.AddItem(ItemData)` / `ContainsItem` / `GetAllItems` / `RemoveItem`.
+- Рука: `VisEquipment.m_rightHand` (компонент `VisEquipment` на персонаже; `Humanoid.m_visEquipment` protected).
 
-### Что нужно для возврата
-- `Inventory.AddItem(ItemDrop.ItemData item)` (Inventory.cs:112) — кладёт **тот же** объект ItemData в свободный слот; есть `ContainsItem(ItemData)`.
-- `ItemDrop.DropItem(ItemData item, int amount, Vector3 pos, Quaternion rot)` (ItemDrop.cs:1798) — запасной вариант (полный инвентарь).
-- Рука: `VisEquipment.m_rightHand` (public Transform), `VisEquipment` — компонент на персонаже; в `Humanoid` поле `m_visEquipment` **protected**, поэтому берём `owner.GetComponent<VisEquipment>()`.
-- `Character.Message(MessageHud.MessageType, string, int, Sprite, bool)` (Character.cs:3784) — всплывающие сообщения.
-- `ZNetScene.instance.Destroy(gameObject)` — корректное уничтожение ZDO-объекта.
+### Модели и молнии (v0.2)
+- Точные имена — из `valheim_Data/StreamingAssets/SoftRef/manifest_extended` (текстовый!):
+  - молот-база: **`SledgeDemolisher`** (есть также `SledgeIron`, `SledgeStagbreaker`, `SledgeGold`, `SledgeGold_BloodLightning`, `SledgeGold_FrostFire`);
+  - молниевое копьё: **`SpearSplitner_Lightning`** (варианты `_Blood`, `_Nature`), снаряд **`projectile_splitner_lightning`**;
+  - эффекты: `fx_lightningweapon_hit`, `fx_chainlightning_hit/spread(_red)`, `fx_Lightning(_red)`, `fx_lightningstaffprojectile_hit`, `fx_redlightning_launch/burst`; звуки: `sfx_mistlands_thunder`, `sfx_staffthunderblood_thunder`, `sfx_staff_lightning_*`.
+- Модель оружия в руке — child **`attach`** (`ItemStand.GetAttachPrefab`), внутри может быть `attachobj`.
+- Поля данных: `SharedData.m_damages` (мн.ч.!), `SharedData.m_hitEffect`, `Attack.m_hitEffect/m_hitTerrainEffect`, `Attack.Clone()`.
 
-### Jotunn API (декомпиляция 2.30.2)
-- `new CustomItem(name, basePrefabName, ItemConfig)` → клон ванильного префаба; `ItemManager.Instance.AddItem(...)` (проверяет IsValid; без Recipe иконка не обязательна).
-- `PrefabManager.Instance.GetPrefab(name)`, `CreateClonedPrefab(name, base)`; событие `PrefabManager.OnVanillaPrefabsAvailable` — повторная попытка, если префаб ещё не доступен.
-- `ItemConfig { Name, Description }` — имя/описание (можно токенами `$item_gungnir`).
-- `CustomLocalization.AddTranslation(language, token, text)` + `LocalizationManager.Instance.AddLocalization(...)`.
-- `CommandManager.Instance.AddConsoleCommand(ConsoleCommand)`; `ConsoleCommand { Name, Help, Run(args) }`.
-- `[BepInDependency(Jotunn.Main.ModGuid)]`, `Jotunn.Main.ModGuid == "com.jotunn.jotunn"`.
+### Jotunn API
+- `CustomItem(name, basePrefab, ItemConfig)`, `ItemManager.Instance.AddItem`, `PrefabManager.Instance.CreateClonedPrefab/AddPrefab/GetPrefab`, событие `OnVanillaPrefabsAvailable`.
+- `LocalizationManager.Instance.GetLocalization()` (сам регистрирует), `CommandManager.Instance.AddConsoleCommand(ConsoleCommand)`.
+- `[BepInDependency(Jotunn.Main.ModGuid)]`.
 
-### Префабы копий (строки из `StreamingAssets/SoftRef/Bundles`, 1.0 — Addressables)
-Найдены: `SpearFlint`, `SpearChitin`, `SpearWolfFang`, `SpearCarapace`, `SpearSplitner`, `SpearDeepNorth`, `SpearAncientbark`(?), `SpearGold`, `SpearWood`, `SpearThrow`/`SpearThrown` (анимации/состояния?). Выбран базис с фолбэком: DeepNorth → Carapace → WolfFang → Flint.
+## Архитектура v0.2.0 (Mjolnir)
 
-## Маршрут
+1. `CustomItem("Mjolnir", SledgeDemolisher)`; вторичная атака = клон броска `SpearSplitner_Lightning` (фолбэки: Splitner → Carapace → WolfFang → Flint).
+2. Снаряд: клон `projectile_splitner_lightning`; в него копируется модель `attach` молота, назначается `m_visual`, старые рендеры выключаются (частицы/звуки снаряда остаются), `m_rotateVisual = 720` (вращение в полёте). Регистрируется `PrefabManager.AddPrefab("mjolnir_projectile")`.
+3. Патчи: `Projectile.Setup` **Prefix** (respawn=false, spawnItem=null, stay-флаги, attach=false, ttl=0, вешаем `MjolnirProjectile`) + `Projectile.OnHit` **Postfix** (старт возврата).
+4. Возврат: задержка 0.3 c → разгон 6→26 м/с к `m_rightHand`, кувырок 900°/c, поимка ≤1.6 м: `Inventory.AddItem` (или дроп под ноги при полном), сообщение, гром `sfx_mistlands_thunder` + искры `fx_lightningweapon_hit`. Safety: `OnDestroy` дропает предмет, чтобы молот не терялся; защита от дублей через `ContainsItem`.
+5. Молнии: `m_damages.m_lightning = max(current, 30)`; `fx_lightningweapon_hit` добавлен в hit/hitTerrain эффекты атак.
+6. Чистка: временный shim `Gungnir` (клон копья, чтобы старые дропы/предметы резолвились) + команда `clean`: уничтожает world-дропы `$item_mjolnir`/`$item_gungnir` через `ZNetScene.m_instances`, убирает старый `$item_gungnir` из инвентаря. Shim убрать после подтверждённой чистки.
+7. Управление: файл-команды `mjolnir-cmd.txt` (`give`, `clean`, `ping`), консоль `mjolnir give|clean`, лог `~/.config/unity3d/IronGate/Valheim/mjolnir.log`.
 
-BepInEx 5 + Jotunn + HarmonyX (managed patch). Снаряд не подменяем: клон копья наследует ванильный `Attack.m_attackProjectile`, а патчи:
-1. `Projectile.Setup` postfix — если `item.m_shared.m_name == "$item_gungnir"`: выключаем respawn/attach, включаем stay-флаги, `m_ttl = 0`, вешаем компонент `GungnirProjectile`.
-2. `Projectile.OnHit` postfix — если компонент есть: старт возврата.
-3. `GungnirProjectile` — полёт → возврат (к `m_rightHand`) → `Inventory.AddItem` (или DropItem при полном инвентаре) → уничтожение снаряда. Safety: `OnDestroy` дропает предмет на месте, чтобы копьё не терялось; защита от дублирования через `ContainsItem`.
+## Проверка
 
-## Оракул (проверка)
-
-- Свой лог: `~/.config/unity3d/IronGate/Valheim/gungnir.log` (не `LogOutput.log`, т.к. объект плагина может переживать не всё).
-- Команды без ввода с клавиатуры: файл `~/.config/unity3d/IronGate/Valheim/gungnir-cmd.txt` (поллинг 0.5 c, команда `give`), плюс консольная команда `gungnir give` (Jotunn).
-- Проверяемые события в логе: `Gungnir item created from <base>`, `attack: ...`, `projectile setup`, `return start`, `catch: returned to inventory`.
-
-## Проверка в игре (v0.1.0)
-
-- 2026-10-05, нативная Linux-сборка, Steam Deck (Wayland, Desktop Mode), мир «Луноворлд», персонаж MOROVIN.
-- Старт: `./start_game_bepinex.sh` напрямую (Steam launch options не трогали). BepInEx + Jotunn + Gungnir загрузились, в `LogOutput.log` ошибок нет.
-- Клонирование: `SpearDeepNorth` на этапе меню ещё недоступен → фолбэк на `SpearCarapace` (как и задумано). Крафт не нужен: предмет выдаётся командой.
-- Бросок — вторичная атака (`m_shared.m_secondaryAttack`), подтверждено: primary `m_attack` = Horizontal/melee, projectile=null.
-- Лог первого теста: `projectile setup` (16.079) → `return start (hit)` (16.436) → `catch: returned to inventory` (17.236). ~1.16 c от перехвата до возврата.
-- Визуально подтверждено человеком (игрок видел возврат в руку); машинный оракул — `gungnir.log`.
+- **v0.1.x (Gungnir):** полный цикл подтверждён в игре 2026-10-05 (setup → return start (hit) → catch, ~1.2 c). Найден баг дубликата (Setup postfix → исправлен на prefix), проверено человеком визуально.
+- **v0.2.0 (Mjolnir):** сборка/деплой — ожидает теста в игре (close → relaunch → clean → give → бросок).
 
 ## План
 
-- [x] recon + RE (этот файл)
-- [x] каркас плагина и патчи (v0.1.0)
-- [ ] установка BepInEx+Jotunn в игру (после согласия, игра закрыта) + бэкап сейвов (Valheim был запущен — бэкап отложен)
-- [x] вертикальный срез: `give` → бросок → возврат (лог) — 2026-10-05 00:49, сработал с первого броска
-- [ ] полировка: рецепт крафта, иконка/модель, звук, спин при возврате
-- [ ] демо-видео, публикация, field note в базу знаний
+- [x] recon + RE (копьё)
+- [x] v0.1 вертикальный срез + фикс дубликата + спин + сообщение + clean
+- [x] v0.2: молот-база, молниевый снаряд, молнии melee/возврат, чистка мира
+- [ ] тест v0.2 в игре
+- [ ] полировка: иконка/модель, звук броска, рецепт крафта
+- [ ] демо-видео, публикация (Thunderstore), field note в базу знаний universal-modder
 
-## Готчи (накапливаем)
+## Готчи (накоплено)
 
-1. Valheim 1.0: код игры в `assembly_valheim.dll`; `Assembly-CSharp.dll` почти пуст — не по нему искать логику.
-2. Jotunn под net462 → плагин net472; на Linux собираем с `Microsoft.NETFramework.ReferenceAssemblies`.
-3. `ilspycmd` требует `DOTNET_ROOT` и roll-forward (`DOTNET_ROLL_FORWARD=LatestMajor`) при SDK 8 против net6-тулзы.
-4. Thunderstore-зипы Jotunn используют `\` в путях — распаковка только через 7z/bsdtar/python.
-5. Valheim 1.0 хранит контент в `StreamingAssets/SoftRef/Bundles/<hash>` (3.8 ГБ) — имена префабов искать grep'ом по бинарю.
-6. `m_consumeItem` у копья: предмет исчезает из инвентаря при броске — возврат обязан вернуть именно этот ItemData (quality/durability), либо предмет потерян.
-7. Ложный «Valheim: RUNNING»: `pgrep -f valheim.x86_64` матчит собственную командную строку проверки — паттерн содержится в тексте скрипта, поэтому «игра запущена» показывалось всегда. Правильно: `pgrep -x valheim.x86_64` или трюк `pgrep -f '[v]alheim.x86_64'`.
-8. Бросок копья — это `m_shared.m_secondaryAttack`; `m_shared.m_attack` у копья — обычный горизонтальный удар без снаряда. Логируя только `m_attack`, легко решить, что «projectile=null» — и искать механику не там. Патчу всё равно: `Projectile.Setup` ловит по `item.m_shared.m_name`, независимо от того, какой атакой брошено.
-9. **Дубликат копья на земле (v0.1.0 → фикс v0.1.1).** `Projectile.Setup` читает `m_respawnItemOnHit` и запоминает `m_spawnItem` ВНУТРИ своего тела — Harmony-postfix выполняется слишком поздно, и ванильный `SpawnOnHit` дропает **клон** предмета (`ItemDrop.DropItem` делает `item.Clone()`), пока оригинал уже вернулся в инвентарь. Фикс: патч `Setup` переделан в **Prefix** + явный `m_spawnItem = null`. Уборка уже созданных копий — команда `gungnir clean` / файл-команда `clean` (обходит `ZNetScene.m_instances` через AccessTools, уничтожает world-ItemDrop'ы с именем `$item_gungnir`; снаряд-Projectile не трогает).
-10. Возврат в v0.1.1: снаряд вращается в полёте (`SpinSpeed=900°/c`), стартовая скорость снижена до 6 м/с (разгон 1.5 с до 26 м/с) — возврат заметен глазом; при поимке показывается сообщение `$msg_gungnir_returned`.
+1. Valheim 1.0: логика в `assembly_valheim.dll`; `Assembly-CSharp.dll` почти пуст.
+2. Jotunn net462 → плагин net472; сборка на Linux через `Microsoft.NETFramework.ReferenceAssemblies`.
+3. `ilspycmd` требует `DOTNET_ROOT` и `DOTNET_ROLL_FORWARD=LatestMajor`.
+4. Thunderstore-зипы Jotunn с `\` в путях — распаковка через 7z/bsdtar/python.
+5. Контент 1.0 — в `StreamingAssets/SoftRef/Bundles/<hash>`; **точные имена искать в `SoftRef/manifest_extended`**, а не бинарным grep (тот даёт обрезки и склейки).
+6. `m_consumeItem`: предмет исчезает из инвентаря при броске — возврат обязан вернуть именно этот ItemData.
+7. Ложный «Valheim: RUNNING»: `pgrep -f valheim.x86_64` матчит собственную командную строку. Правильно: `pgrep -x valheim.x86_64`.
+8. Бросок копья — `m_shared.m_secondaryAttack`; primary `m_attack` без снаряда.
+9. **Дубликат дропа (v0.1.0→fix):** `Setup` читает `m_respawnItemOnHit` и пишет `m_spawnItem` внутри тела; postfix слишком поздно → ванильный `SpawnOnHit` дропает клон. Фикс: Prefix + `m_spawnItem = null`.
+10. Возврат: спин `m_rotateVisual` работает только пока включён `Projectile`; при возврате компонент выключается и вращаем root вручную.
+11. Поле урона — `SharedData.m_damages` (мн. ч.), легко опечататься в `m_damage`.
+12. Модель оружия в руке — child `attach`; копию можно инстанцировать в снаряд и назначить `Projectile.m_visual`, сохранив эффекты снаряда.

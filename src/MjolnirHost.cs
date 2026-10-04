@@ -2,13 +2,14 @@ using System;
 using System.IO;
 using UnityEngine;
 
-namespace Gungnir
+namespace Mjolnir
 {
     /// <summary>
     /// Long-lived host. Polls the command file so the mod can be driven
     /// without synthetic keyboard/mouse input (works headless and on Linux).
+    /// Commands: give, clean, ping.
     /// </summary>
-    public class GungnirHost : MonoBehaviour
+    public class MjolnirHost : MonoBehaviour
     {
         private const float PollInterval = 0.5f;
         private float m_nextPoll;
@@ -20,37 +21,37 @@ namespace Gungnir
 
             try
             {
-                if (!File.Exists(GungnirPlugin.CmdPath)) return;
+                if (!File.Exists(MjolnirPlugin.CmdPath)) return;
 
-                string[] lines = File.ReadAllLines(GungnirPlugin.CmdPath);
-                File.Delete(GungnirPlugin.CmdPath);
+                string[] lines = File.ReadAllLines(MjolnirPlugin.CmdPath);
+                File.Delete(MjolnirPlugin.CmdPath);
 
                 foreach (string raw in lines)
                 {
                     string line = raw.Trim().ToLowerInvariant();
                     if (line.Length == 0) continue;
-                    GungnirPlugin.FileLog("cmd: " + line);
+                    MjolnirPlugin.FileLog("cmd: " + line);
 
                     switch (line)
                     {
                         case "give":
-                            GungnirPlugin.GiveToLocalPlayer();
+                            MjolnirPlugin.GiveToLocalPlayer();
                             break;
                         case "clean":
-                            GungnirPlugin.CleanWorldDrops();
+                            MjolnirPlugin.CleanWorldDrops();
                             break;
                         case "ping":
-                            GungnirPlugin.FileLog("pong");
+                            MjolnirPlugin.FileLog("pong");
                             break;
                         default:
-                            GungnirPlugin.FileLog("unknown cmd: " + line);
+                            MjolnirPlugin.FileLog("unknown cmd: " + line);
                             break;
                     }
                 }
             }
             catch (Exception e)
             {
-                GungnirPlugin.FileLog("cmd poll error: " + e.Message);
+                MjolnirPlugin.FileLog("cmd poll error: " + e.Message);
             }
         }
     }

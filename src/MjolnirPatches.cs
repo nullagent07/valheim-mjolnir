@@ -1,24 +1,24 @@
 using HarmonyLib;
 
-namespace Gungnir
+namespace Mjolnir
 {
     /// <summary>
-    /// When a Gungnir projectile is set up (thrown), make it returnable:
+    /// When a Mjolnir projectile is set up (thrown), make it returnable:
     /// no item respawn on hit, no despawn on hit, no attaching to rigidbodies,
     /// no TTL, and attach the returning behaviour.
+    /// MUST be a Prefix: vanilla Setup reads m_respawnItemOnHit and stores m_spawnItem
+    /// inside its own body; a postfix would run too late and the item would drop (duplicate bug).
     /// </summary>
     [HarmonyPatch(typeof(Projectile), nameof(Projectile.Setup))]
     internal static class PatchProjectileSetup
     {
-        // MUST be a Prefix: vanilla Setup reads m_respawnItemOnHit and stores m_spawnItem
-        // inside its own body. A postfix runs too late - the item still drops on hit (duplicate bug).
         [HarmonyPrefix]
         private static void Prefix(Projectile __instance, Character owner, ItemDrop.ItemData item)
         {
             try
             {
                 if (item == null || item.m_shared == null) return;
-                if (item.m_shared.m_name != GungnirPlugin.ItemNameToken) return;
+                if (item.m_shared.m_name != MjolnirPlugin.ItemNameToken) return;
 
                 __instance.m_respawnItemOnHit = false;
                 __instance.m_spawnItem = null;
@@ -28,18 +28,18 @@ namespace Gungnir
                 __instance.m_attachToClosestBone = false;
                 __instance.m_ttl = 0f;
 
-                GungnirProjectile.Attach(__instance.gameObject, owner, item);
-                GungnirPlugin.FileLog("projectile setup: Gungnir thrown by " + (owner != null ? owner.name : "null"));
+                MjolnirProjectile.Attach(__instance.gameObject, owner, item);
+                MjolnirPlugin.FileLog("projectile setup: Mjolnir thrown by " + (owner != null ? owner.name : "null"));
             }
             catch (System.Exception e)
             {
-                GungnirPlugin.FileLog("Setup postfix error: " + e);
+                MjolnirPlugin.FileLog("Setup prefix error: " + e);
             }
         }
     }
 
     /// <summary>
-    /// Any hit on a Gungnir projectile starts the return flight.
+    /// Any hit on a Mjolnir projectile starts the return flight.
     /// </summary>
     [HarmonyPatch(typeof(Projectile), nameof(Projectile.OnHit))]
     internal static class PatchProjectileOnHit
@@ -49,15 +49,15 @@ namespace Gungnir
         {
             try
             {
-                var gungnir = __instance.GetComponent<GungnirProjectile>();
-                if (gungnir != null)
+                var mjolnir = __instance.GetComponent<MjolnirProjectile>();
+                if (mjolnir != null)
                 {
-                    gungnir.OnVanillaHit();
+                    mjolnir.OnVanillaHit();
                 }
             }
             catch (System.Exception e)
             {
-                GungnirPlugin.FileLog("OnHit postfix error: " + e);
+                MjolnirPlugin.FileLog("OnHit postfix error: " + e);
             }
         }
     }
