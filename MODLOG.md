@@ -68,12 +68,21 @@ BepInEx 5 + Jotunn + HarmonyX (managed patch). Снаряд не подменя�
 - Команды без ввода с клавиатуры: файл `~/.config/unity3d/IronGate/Valheim/gungnir-cmd.txt` (поллинг 0.5 c, команда `give`), плюс консольная команда `gungnir give` (Jotunn).
 - Проверяемые события в логе: `Gungnir item created from <base>`, `attack: ...`, `projectile setup`, `return start`, `catch: returned to inventory`.
 
+## Проверка в игре (v0.1.0)
+
+- 2026-10-05, нативная Linux-сборка, Steam Deck (Wayland, Desktop Mode), мир «Луноворлд», персонаж MOROVIN.
+- Старт: `./start_game_bepinex.sh` напрямую (Steam launch options не трогали). BepInEx + Jotunn + Gungnir загрузились, в `LogOutput.log` ошибок нет.
+- Клонирование: `SpearDeepNorth` на этапе меню ещё недоступен → фолбэк на `SpearCarapace` (как и задумано). Крафт не нужен: предмет выдаётся командой.
+- Бросок — вторичная атака (`m_shared.m_secondaryAttack`), подтверждено: primary `m_attack` = Horizontal/melee, projectile=null.
+- Лог первого теста: `projectile setup` (16.079) → `return start (hit)` (16.436) → `catch: returned to inventory` (17.236). ~1.16 c от перехвата до возврата.
+- Визуально подтверждено человеком (игрок видел возврат в руку); машинный оракул — `gungnir.log`.
+
 ## План
 
 - [x] recon + RE (этот файл)
 - [x] каркас плагина и патчи (v0.1.0)
 - [ ] установка BepInEx+Jotunn в игру (после согласия, игра закрыта) + бэкап сейвов (Valheim был запущен — бэкап отложен)
-- [ ] вертикальный срез: `give` → бросок → возврат (лог)
+- [x] вертикальный срез: `give` → бросок → возврат (лог) — 2026-10-05 00:49, сработал с первого броска
 - [ ] полировка: рецепт крафта, иконка/модель, звук, спин при возврате
 - [ ] демо-видео, публикация, field note в базу знаний
 
@@ -85,3 +94,5 @@ BepInEx 5 + Jotunn + HarmonyX (managed patch). Снаряд не подменя�
 4. Thunderstore-зипы Jotunn используют `\` в путях — распаковка только через 7z/bsdtar/python.
 5. Valheim 1.0 хранит контент в `StreamingAssets/SoftRef/Bundles/<hash>` (3.8 ГБ) — имена префабов искать grep'ом по бинарю.
 6. `m_consumeItem` у копья: предмет исчезает из инвентаря при броске — возврат обязан вернуть именно этот ItemData (quality/durability), либо предмет потерян.
+7. Ложный «Valheim: RUNNING»: `pgrep -f valheim.x86_64` матчит собственную командную строку проверки — паттерн содержится в тексте скрипта, поэтому «игра запущена» показывалось всегда. Правильно: `pgrep -x valheim.x86_64` или трюк `pgrep -f '[v]alheim.x86_64'`.
+8. Бросок копья — это `m_shared.m_secondaryAttack`; `m_shared.m_attack` у копья — обычный горизонтальный удар без снаряда. Логируя только `m_attack`, легко решить, что «projectile=null» — и искать механику не там. Патчу всё равно: `Projectile.Setup` ловит по `item.m_shared.m_name`, независимо от того, какой атакой брошено.
