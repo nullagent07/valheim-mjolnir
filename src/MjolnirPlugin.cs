@@ -22,7 +22,7 @@ namespace Mjolnir
     {
         public const string PluginGuid = "morovin.mjolnir";
         public const string PluginName = "Mjolnir - returning thunder hammer";
-        public const string PluginVersion = "0.3.1";
+        public const string PluginVersion = "0.3.2";
 
         public const string ItemPrefabName = "Mjolnir";
         public const string ItemNameToken = "$item_mjolnir";
@@ -141,8 +141,8 @@ namespace Mjolnir
                     return;
                 }
 
-                // Frostner was removed in Valheim 1.0; its successor is the one-handed MaceEldner line.
-                string baseName = FirstAvailable("MaceEldner", "MaceSilver", "MaceIron", "SledgeDemolisher");
+                // Frostner (Ледомор) is internally named MaceSilver - the "silver mace" IS Frostner.
+                string baseName = FirstAvailable("MaceSilver", "MaceEldner", "MaceIron", "SledgeDemolisher");
                 if (baseName == null)
                 {
                     FileLog("no base hammer/mace available yet");
@@ -227,9 +227,10 @@ namespace Mjolnir
                     }
                 }
 
-                // --- lightning damage on top of the base weapon ---
+                // --- lightning damage on top of the base weapon (Frostner: blunt/frost/spirit) ---
                 shared.m_damages.m_lightning = Mathf.Max(shared.m_damages.m_lightning, 30f);
-                FileLog($"damage: blunt={shared.m_damages.m_blunt} slash={shared.m_damages.m_slash} lightning={shared.m_damages.m_lightning}");
+                shared.m_damages.m_blunt = Mathf.Max(shared.m_damages.m_blunt, 60f);
+                FileLog($"damage: blunt={shared.m_damages.m_blunt} frost={shared.m_damages.m_frost} spirit={shared.m_damages.m_spirit} lightning={shared.m_damages.m_lightning}");
 
                 // --- lightning sparks on melee hits ---
                 if (shared.m_attack != null)
@@ -251,6 +252,40 @@ namespace Mjolnir
             {
                 FileLog("TryCreateItem exception: " + e);
             }
+        }
+
+        /// <summary>Case-insensitive prefab lookup over the live ZNetScene / ObjectDB (fields are private, so via reflection).</summary>
+        private static GameObject FindPrefabIgnoreCase(string name)
+        {
+            try
+            {
+                var znsField = AccessTools.Field(typeof(ZNetScene), "m_namedPrefabs");
+                if (ZNetScene.instance != null && znsField != null
+                    && znsField.GetValue(ZNetScene.instance) is System.Collections.IDictionary znsDict)
+                {
+                    foreach (System.Collections.DictionaryEntry entry in znsDict)
+                    {
+                        var go = entry.Value as GameObject;
+                        if (go != null && string.Equals(go.name, name, StringComparison.OrdinalIgnoreCase)) return go;
+                    }
+                }
+
+                var odbField = AccessTools.Field(typeof(ObjectDB), "m_itemByHash");
+                if (ObjectDB.instance != null && odbField != null
+                    && odbField.GetValue(ObjectDB.instance) is System.Collections.IDictionary odbDict)
+                {
+                    foreach (System.Collections.DictionaryEntry entry in odbDict)
+                    {
+                        var go = entry.Value as GameObject;
+                        if (go != null && string.Equals(go.name, name, StringComparison.OrdinalIgnoreCase)) return go;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                FileLog("FindPrefabIgnoreCase error: " + e.Message);
+            }
+            return null;
         }
 
         /// <summary>Gets the weapon's actual model root: the attach/attachobj child, or null.</summary>
@@ -389,6 +424,10 @@ namespace Mjolnir
                 }
 
                 var src = PrefabManager.Instance.GetPrefab(prefabName);
+                if (src == null)
+                {
+                    src = FindPrefabIgnoreCase(prefabName);
+                }
                 if (src == null)
                 {
                     FileLog("restyle: prefab not found: " + prefabName);

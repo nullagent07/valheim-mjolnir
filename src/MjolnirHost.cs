@@ -28,7 +28,8 @@ namespace Mjolnir
 
                 foreach (string raw in lines)
                 {
-                    string line = raw.Trim().ToLowerInvariant();
+                    string rawLine = raw.Trim();
+                    string line = rawLine.ToLowerInvariant();
                     if (line.Length == 0) continue;
                     MjolnirPlugin.FileLog("cmd: " + line);
 
@@ -46,7 +47,8 @@ namespace Mjolnir
                         default:
                             if (line.StartsWith("restyle "))
                             {
-                                MjolnirPlugin.Restyle(line.Substring("restyle ".Length).Trim());
+                                // prefab names are case-sensitive: pass the original case
+                                MjolnirPlugin.Restyle(rawLine.Substring("restyle ".Length).Trim());
                             }
                             else
                             {
