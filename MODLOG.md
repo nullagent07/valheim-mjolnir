@@ -4,7 +4,7 @@
 
 ## Идея
 
-Мьёльнир: молот, который кидаешь (вторичная атака) — он бьёт молниями, не падает на землю, а с вращением возвращается в руку. Melee-удары тоже искрят молниями. Старые тестовые копии копья из мира убираются командой `clean`.
+Мьёльнир: молот, который кидаешь (вторичная атака) — он бьёт молниями и остаётся в точке попадания. Чтобы вернуть: наведи курсор на молот и нажми вторичную атаку (пустой рукой) — он с вращением летит обратно и сразу встаёт в руку (автоэкипировка). Melee-удары искрят молниями, при попадании — ударная волна. Старые копии копья убираются командой `clean`.
 
 ## Факты окружения
 
@@ -57,6 +57,17 @@
 6. Чистка: временный shim `Gungnir` (клон копья, чтобы старые дропы/предметы резолвились) + команда `clean`: уничтожает world-дропы `$item_mjolnir`/`$item_gungnir` через `ZNetScene.m_instances`, убирает старый `$item_gungnir` из инвентаря. Shim убрать после подтверждённой чистки.
 7. Управление: файл-команды `mjolnir-cmd.txt` (`give`, `clean`, `ping`), консоль `mjolnir give|clean`, лог `~/.config/unity3d/IronGate/Valheim/mjolnir.log`.
 
+## Архитектура v0.3.0 (управляемый возврат, MaceEldner)
+
+- **Frostner в Valheim 1.0 удалён** — преемник: линейка одноручных булав `MaceEldner` (`_Blood`/`_Lightning`/`_Nature`). База: `MaceEldner` → фолбэк `MaceSilver` → `MaceIron` → `SledgeDemolisher`.
+- Снаряд лежит там, где упал: `OnHit` postfix → состояние Lying (`Projectile.enabled=false`, `m_ttl=0`) — молот ждёт зова, подсказка `$msg_mjolnir_deployed`.
+- Зов: patch `Humanoid.StartAttack(Character target, bool secondaryAttack)` **Prefix** — если локальный игрок, пустая рука (`GetCurrentWeapon()==null`) и `MjolnirProjectile.Current` лежит → проверка прицела (`GetAimDir` от `GetEyePoint`, угол ≤ ~25°, дистанция ≤ 100 м; в радиусе 3 м — без прицела) → `StartReturn`, гром у молота, сообщение. Prefix возвращает false (съедает нажатие).
+- Возврат: задержка 0.15 c, разгон 10→34 м/с, у руки плавное замедление до 2.5 м/с (`ApproachDistance=5`), кувырок 480°/c (`LookRotation * Euler(spin)`), поимка ≤1.3 м → `Inventory.AddItem` + **`Humanoid.EquipItem(item, true)`** — молот сразу в руке.
+- Волна удара: launch-эффекты броска очищены (`m_startEffect/m_triggerEffect/m_burstEffect/m_trailStartEffect = new EffectList()` — именно они давали волну в момент броска: `FireProjectileBurst` играет `m_burstEffect` на точке спавна), в hit-эффекты снаряда добавлены `demolisher_shockwave` + `fx_lightningweapon_hit` — волна после удара.
+- Ориентация снаряда: модель `attach` повёрнута `Euler(-90,0,0)` — летит вдоль направления броска (не вертикально).
+- Таймаут полёта (6 c, ни во что не попал) → предмет дропается на месте (`DropSafely`) — молот не теряется.
+- Safety: `OnDestroy`/`DropSafely` дропают предмет; `Current` очищается при поимке/дропе/уничтожении.
+
 ## Проверка
 
 - **v0.1.x (Gungnir):** полный цикл подтверждён в игре 2026-10-05 (setup → return start (hit) → catch, ~1.2 c). Найден баг дубликата (Setup postfix → исправлен на prefix), проверено человеком визуально.
@@ -85,3 +96,6 @@
 10. Возврат: спин `m_rotateVisual` работает только пока включён `Projectile`; при возврате компонент выключается и вращаем root вручную.
 11. Поле урона — `SharedData.m_damages` (мн. ч.), легко опечататься в `m_damage`.
 12. Модель оружия в руке — child `attach`; копию можно инстанцировать в снаряд и назначить `Projectile.m_visual`, сохранив эффекты снаряда.
+13. **Frostner в Valheim 1.0 не существует** (нет ни в манифесте, ни в бандлах) — преемник `MaceEldner` (+варианты `_Blood/_Lightning/_Nature`).
+14. «Волна при броске» — это `Attack.m_burstEffect`/`m_triggerEffect`/`m_startEffect`, играющиеся в `Attack.Start`/`FireProjectileBurst`/`OnAttackTrigger` (Attack.cs 540, 778, 929). У клонированной атаки их можно просто обнулить; ударную волну — добавить в hit-эффекты снаряда (`demolisher_shockwave`).
+15. Нажатие вторичной атаки без оружия доходит до `Humanoid.StartAttack(null, true)` и сразу возвращает false (нет оружия) — идеальная точка перехвата кастомного действия; Prefix до busy-проверок позволяет зов даже на бегу.

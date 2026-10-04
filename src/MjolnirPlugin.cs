@@ -22,12 +22,14 @@ namespace Mjolnir
     {
         public const string PluginGuid = "morovin.mjolnir";
         public const string PluginName = "Mjolnir - returning thunder hammer";
-        public const string PluginVersion = "0.2.0";
+        public const string PluginVersion = "0.3.0";
 
         public const string ItemPrefabName = "Mjolnir";
         public const string ItemNameToken = "$item_mjolnir";
         public const string ItemDescToken = "$item_mjolnir_desc";
         public const string MsgReturnedToken = "$msg_mjolnir_returned";
+        public const string MsgDeployedToken = "$msg_mjolnir_deployed";
+        public const string MsgRecallToken = "$msg_mjolnir_recall";
 
         // Temporary shim: keep old Gungnir prefabs resolvable so `clean` can remove
         // the leftover world drops / inventory items from v0.1.x. Remove in a later version.
@@ -89,6 +91,10 @@ namespace Mjolnir
                     "Молот Тора. Бьёт молниями и всегда возвращается в руку бросившему.");
                 loc.AddTranslation("English", "msg_mjolnir_returned", "Mjölnir returns to your hand!");
                 loc.AddTranslation("Russian", "msg_mjolnir_returned", "Мьёльнир возвращается в руку!");
+                loc.AddTranslation("English", "msg_mjolnir_deployed", "Mjölnir awaits your call. Aim at it and press secondary attack.");
+                loc.AddTranslation("Russian", "msg_mjolnir_deployed", "Мьёльнир ждёт зова. Наведи на него курсор и нажми вторичную атаку.");
+                loc.AddTranslation("English", "msg_mjolnir_recall", "Mjölnir returns!");
+                loc.AddTranslation("Russian", "msg_mjolnir_recall", "Мьёльнир возвращается!");
 
                 // old Gungnir shim strings
                 loc.AddTranslation("English", "item_gungnir", "Gungnir (old)");
@@ -130,7 +136,8 @@ namespace Mjolnir
                     return;
                 }
 
-                string baseName = FirstAvailable("SledgeDemolisher", "SledgeIron", "SledgeStagbreaker", "MaceSilver", "MaceNeedle", "MaceIron");
+                // Frostner was removed in Valheim 1.0; its successor is the one-handed MaceEldner line.
+                string baseName = FirstAvailable("MaceEldner", "MaceSilver", "MaceIron", "SledgeDemolisher");
                 if (baseName == null)
                 {
                     FileLog("no base hammer/mace available yet");
@@ -175,8 +182,14 @@ namespace Mjolnir
                 if (source != null)
                 {
                     shared.m_secondaryAttack = source.Clone();
+                    // The Splitner throw fires a big launch wave from the attack effects at the
+                    // moment of the throw - move that drama to the impact instead.
+                    shared.m_secondaryAttack.m_startEffect = new EffectList();
+                    shared.m_secondaryAttack.m_triggerEffect = new EffectList();
+                    shared.m_secondaryAttack.m_burstEffect = new EffectList();
+                    shared.m_secondaryAttack.m_trailStartEffect = new EffectList();
                     string projName = source.m_attackProjectile != null ? source.m_attackProjectile.name : "null";
-                    FileLog($"throw attack copied from {sourceName}: projectile={projName} consume={source.m_consumeItem} anim={source.m_attackAnimation} type={source.m_attackType}");
+                    FileLog($"throw attack copied from {sourceName}: projectile={projName} consume={source.m_consumeItem} anim={source.m_attackAnimation} type={source.m_attackType} (launch fx cleared)");
                 }
                 else
                 {
@@ -191,9 +204,15 @@ namespace Mjolnir
                     if (projClone != null)
                     {
                         ReskinProjectile(projClone, item.ItemDrop.gameObject);
+                        var projComp = projClone.GetComponent<Projectile>();
+                        if (projComp != null)
+                        {
+                            AppendEffect(projComp.m_hitEffects, "demolisher_shockwave");
+                            AppendEffect(projComp.m_hitEffects, "fx_lightningweapon_hit");
+                        }
                         PrefabManager.Instance.AddPrefab(projClone);
                         shared.m_secondaryAttack.m_attackProjectile = projClone;
-                        FileLog("mjolnir_projectile created from " + projSrc.name + " and registered");
+                        FileLog("mjolnir_projectile created from " + projSrc.name + " and registered (impact wave added)");
                     }
                     else
                     {
@@ -244,7 +263,8 @@ namespace Mjolnir
                 var modelCopy = UnityEngine.Object.Instantiate(srcModel, proj.transform, false);
                 modelCopy.name = "mjolnir_visual";
                 modelCopy.transform.localPosition = Vector3.zero;
-                modelCopy.transform.localRotation = Quaternion.identity;
+                // lay the weapon along the flight direction (handle forward instead of upright)
+                modelCopy.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
                 modelCopy.SetActive(true);
 
                 foreach (var r in modelCopy.GetComponentsInChildren<MeshRenderer>(true)) r.enabled = true;

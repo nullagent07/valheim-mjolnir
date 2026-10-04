@@ -4,26 +4,36 @@ namespace Mjolnir
 {
     /// <summary>
     /// Attached by MjolnirPatches to the thrown Mjolnir projectile.
-    /// Flying -> (hit or timeout) -> return to the owner's right hand -> catch.
+    /// Flying -> Lying (waits where it landed) -> Returning (recalled by aiming at it
+    /// and pressing secondary attack while unarmed) -> catch into the hand.
     /// </summary>
     public class MjolnirProjectile : MonoBehaviour
     {
-        private enum State
+        internal enum State
         {
             Flying,
+            Lying,
             Returning,
             Done,
         }
 
         private const float MaxFlyTime = 6f;
-        private const float ReturnDelay = 0.3f;
-        private const float ReturnSpeedMin = 6f;
-        private const float ReturnSpeedMax = 26f;
-        private const float CatchDistance = 1.6f;
-        private const float AccelTime = 1.5f;
-        private const float SpinSpeed = 900f;
+        private const float ReturnDelay = 0.15f;
+        private const float ReturnSpeedMin = 10f;
+        private const float ReturnSpeedMax = 34f;
+        private const float ApproachDistance = 5f;
+        private const float ApproachSpeed = 2.5f;
+        private const float CatchDistance = 1.3f;
+        private const float AccelTime = 1.4f;
+        private const float SpinSpeed = 480f;
+        private const float SummonMaxDistance = 100f;
+        private const float SummonCloseDistance = 3f;
+        private const float SummonCosAngle = 0.906f; // ~25 degrees of the crosshair
 
-        private State m_state = State.Flying;
+        /// <summary>The currently deployed hammer (one per client).</summary>
+        internal static MjolnirProjectile Current;
+
+        internal State m_state = State.Flying;
         private Character m_owner;
         private ItemDrop.ItemData m_item;
         private Projectile m_projectile;
@@ -32,6 +42,7 @@ namespace Mjolnir
         private float m_flyTime;
         private float m_returnTime;
         private float m_returnStartAt;
+        private float m_spinAngle;
 
         internal static void Attach(GameObject go, Character owner, ItemDrop.ItemData item)
         {
@@ -47,15 +58,59 @@ namespace Mjolnir
             comp.m_visEquipment = owner != null ? owner.GetComponent<VisEquipment>() : null;
             comp.m_state = State.Flying;
             comp.m_flyTime = 0f;
+            Current = comp;
         }
 
-        /// <summary>Called from the Projectile.OnHit Harmony postfix.</summary>
+        /// <summary>Called from the Projectile.OnHit Harmony postfix: the hammer lands and waits.</summary>
         public void OnVanillaHit()
         {
-            if (m_state == State.Flying)
+            if (m_state != State.Flying) return;
+            m_state = State.Lying;
+
+            // freeze: no vanilla simulation, no TTL destroy - it waits for the recall
+            if (m_projectile != null)
             {
-                StartReturn("hit");
+                m_projectile.enabled = false;
+                m_projectile.m_ttl = 0f;
             }
+            MjolnirPlugin.FileLog("mjolnir deployed at " + transform.position);
+
+            var player = m_owner as Player;
+            if (player != null)
+            {
+                player.Message(MessageHud.MessageType.TopLeft, MjolnirPlugin.MsgDeployedToken, 0,
+                    m_item != null ? m_item.GetIcon() : null);
+            }
+        }
+
+        /// <summary>
+        /// Called from the Humanoid.StartAttack prefix when the local player presses secondary
+        /// attack while unarmed. Returns true when the hammer was recalled.
+        /// </summary>
+        public bool TrySummon(Player player)
+        {
+            if (m_state != State.Lying) return false;
+            if (m_owner == null || m_owner != player) return false;
+
+            Vector3 delta = transform.position - player.GetEyePoint();
+            float dist = delta.magnitude;
+
+            bool aimed = dist <= SummonCloseDistance;
+            if (!aimed && dist <= SummonMaxDistance)
+            {
+                Vector3 aimDir = player.GetAimDir(player.GetEyePoint());
+                if (aimDir.sqrMagnitude > 0.0001f && Vector3.Dot(aimDir.normalized, delta.normalized) >= SummonCosAngle)
+                {
+                    aimed = true;
+                }
+            }
+            if (!aimed) return false;
+
+            StartReturn("summon");
+            MjolnirPlugin.PlayFxAt("sfx_mistlands_thunder", transform.position);
+            player.Message(MessageHud.MessageType.TopLeft, MjolnirPlugin.MsgRecallToken, 0,
+                m_item != null ? m_item.GetIcon() : null);
+            return true;
         }
 
         private void Update()
@@ -72,7 +127,7 @@ namespace Mjolnir
                     m_flyTime += Time.deltaTime;
                     if (m_flyTime >= MaxFlyTime)
                     {
-                        StartReturn("timeout");
+                        DropSafely("timeout");
                     }
                 }
                 else if (m_state == State.Returning)
@@ -93,8 +148,7 @@ namespace Mjolnir
             m_state = State.Returning;
             m_returnStartAt = Time.time + ReturnDelay;
             m_returnTime = 0f;
-
-            // stop vanilla simulation (gravity, raycasts, TTL)
+            m_spinAngle = 0f;
             if (m_projectile != null)
             {
                 m_projectile.enabled = false;
@@ -110,7 +164,7 @@ namespace Mjolnir
             }
             if (m_owner != null)
             {
-                return m_owner.GetCenterPoint() + Vector3.up * 1.3f;
+                return m_owner.GetCenterPoint() + Vector3.up * 1.2f;
             }
             return transform.position;
         }
@@ -123,7 +177,6 @@ namespace Mjolnir
                 return;
             }
 
-            m_returnTime += Time.deltaTime;
             Vector3 target = CatchPoint();
             Vector3 delta = target - transform.position;
             float dist = delta.magnitude;
@@ -133,20 +186,24 @@ namespace Mjolnir
                 return;
             }
 
-            float speed = Mathf.Lerp(ReturnSpeedMin, ReturnSpeedMax, Mathf.Clamp01(m_returnTime / AccelTime));
+            m_returnTime += Time.deltaTime;
+            float t = Mathf.Clamp01(m_returnTime / AccelTime);
+            float speed = Mathf.Lerp(ReturnSpeedMin, ReturnSpeedMax, t);
+            float approach = Mathf.Clamp01(dist / ApproachDistance);
+            speed = Mathf.Lerp(ApproachSpeed, speed, approach); // gentle final approach into the hand
+
             Vector3 dir = delta / dist;
             transform.position += dir * speed * Time.deltaTime;
-            if (dir.sqrMagnitude > 0.0001f)
-            {
-                transform.rotation = Quaternion.LookRotation(dir);
-                // tumble the hammer while it flies back so the return reads as an animation
-                transform.Rotate(Vector3.right, SpinSpeed * Time.deltaTime, Space.Self);
-            }
+
+            m_spinAngle += SpinSpeed * Time.deltaTime;
+            transform.rotation = Quaternion.LookRotation(dir) * Quaternion.Euler(m_spinAngle, 0f, 0f);
         }
 
         private void Catch()
         {
             m_state = State.Done;
+            if (Current == this) Current = null;
+
             var player = m_owner as Player;
             if (player != null)
             {
@@ -156,6 +213,15 @@ namespace Mjolnir
                     if (inv.AddItem(m_item))
                     {
                         MjolnirPlugin.FileLog("catch: returned to inventory");
+                        try
+                        {
+                            player.EquipItem(m_item, true);
+                            MjolnirPlugin.FileLog("catch: equipped to hand");
+                        }
+                        catch (System.Exception e)
+                        {
+                            MjolnirPlugin.FileLog("equip failed: " + e.Message);
+                        }
                     }
                     else
                     {
@@ -168,11 +234,16 @@ namespace Mjolnir
                 else
                 {
                     MjolnirPlugin.FileLog("catch: already in inventory (no duplicate)");
+                    if (m_item != null)
+                    {
+                        try { player.EquipItem(m_item, true); } catch { }
+                    }
                 }
+
                 player.Message(MessageHud.MessageType.TopLeft, MjolnirPlugin.MsgReturnedToken, 0,
                     m_item != null ? m_item.GetIcon() : null);
-                MjolnirPlugin.PlayFxAt("sfx_mistlands_thunder", player.transform.position);
                 MjolnirPlugin.PlayFxAt("fx_lightningweapon_hit", CatchPoint());
+                MjolnirPlugin.PlayFxAt("sfx_mistlands_thunder", player.transform.position);
             }
             else
             {
@@ -189,6 +260,8 @@ namespace Mjolnir
         {
             if (m_state == State.Done) return;
             m_state = State.Done;
+            if (Current == this) Current = null;
+
             if (m_item != null)
             {
                 try
@@ -223,6 +296,7 @@ namespace Mjolnir
         private void OnDestroy()
         {
             // Safety net: the hammer must never be lost.
+            if (Current == this) Current = null;
             if (m_state != State.Done && m_item != null)
             {
                 try
