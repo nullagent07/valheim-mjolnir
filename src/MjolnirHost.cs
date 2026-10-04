@@ -21,6 +21,8 @@ namespace Mjolnir
 
             try
             {
+                MjolnirPlugin.UpdatePendingEquip();
+
                 if (!File.Exists(MjolnirPlugin.CmdPath)) return;
 
                 string[] lines = File.ReadAllLines(MjolnirPlugin.CmdPath);

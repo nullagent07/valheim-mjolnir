@@ -22,7 +22,7 @@ namespace Mjolnir
     {
         public const string PluginGuid = "morovin.mjolnir";
         public const string PluginName = "Mjolnir - returning thunder hammer";
-        public const string PluginVersion = "0.3.3";
+        public const string PluginVersion = "0.3.4";
 
         public const string ItemPrefabName = "Mjolnir";
         public const string ItemNameToken = "$item_mjolnir";
@@ -45,6 +45,8 @@ namespace Mjolnir
         private static bool s_itemCreated;
         private static GameObject s_itemPrefab;
         private static GameObject s_projectilePrefab;
+        private static ItemDrop.ItemData s_pendingEquipItem;
+        private static float s_pendingEquipUntil;
         private Harmony m_harmony;
 
         private void Awake()
@@ -529,6 +531,39 @@ namespace Mjolnir
             if (Instance != null)
             {
                 Instance.Logger.LogInfo(msg);
+            }
+        }
+
+        /// <summary>Equip retry: EquipItem refuses while InAttack/InDodge; keep trying briefly.</summary>
+        internal static void TryEquipLater(ItemDrop.ItemData item)
+        {
+            s_pendingEquipItem = item;
+            s_pendingEquipUntil = Time.realtimeSinceStartup + 2.5f;
+        }
+
+        internal static void UpdatePendingEquip()
+        {
+            if (s_pendingEquipItem == null) return;
+            try
+            {
+                var player = Player.m_localPlayer;
+                if (player == null) return;
+                if (player.EquipItem(s_pendingEquipItem, true))
+                {
+                    FileLog("deferred equip ok");
+                    s_pendingEquipItem = null;
+                    return;
+                }
+                if (Time.realtimeSinceStartup > s_pendingEquipUntil)
+                {
+                    FileLog("deferred equip gave up");
+                    s_pendingEquipItem = null;
+                }
+            }
+            catch (Exception e)
+            {
+                FileLog("deferred equip error: " + e.Message);
+                s_pendingEquipItem = null;
             }
         }
 

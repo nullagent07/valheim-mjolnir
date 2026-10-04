@@ -25,7 +25,8 @@ namespace Mjolnir
         private const float ApproachSpeed = 2.5f;
         private const float CatchDistance = 1.3f;
         private const float AccelTime = 1.4f;
-        private const float SpinSpeed = 480f;
+        private const float FlipTime = 0.5f;         // one flip right after takeoff, then stable
+        private const float HandleLeadDistance = 4f;  // on approach the handle turns toward the hand
         private const float SummonMaxDistance = 100f;
         private const float SummonCloseDistance = 3f;
         private const float SummonCosAngle = 0.906f; // ~25 degrees of the crosshair
@@ -44,7 +45,6 @@ namespace Mjolnir
         private float m_flyTime;
         private float m_returnTime;
         private float m_returnStartAt;
-        private float m_spinAngle;
         private bool m_reachPlayed;
 
         internal static void Attach(GameObject go, Character owner, ItemDrop.ItemData item)
@@ -178,7 +178,6 @@ namespace Mjolnir
             m_state = State.Returning;
             m_returnStartAt = Time.time + ReturnDelay;
             m_returnTime = 0f;
-            m_spinAngle = 0f;
             m_reachPlayed = false;
             if (m_projectile != null)
             {
@@ -231,28 +230,38 @@ namespace Mjolnir
             Vector3 dir = delta / dist;
             transform.position += dir * speed * Time.deltaTime;
 
-            m_spinAngle += SpinSpeed * Time.deltaTime;
-            transform.rotation = Quaternion.LookRotation(dir) * Quaternion.Euler(m_spinAngle, 0f, 0f);
+            // Orientation: one flip at takeoff, then a stable head-first flight toward the
+            // owner; on the final approach the handle turns toward the hand (head away).
+            Quaternion desired;
+            if (dist <= HandleLeadDistance)
+            {
+                float leadT = Mathf.Clamp01(1f - dist / HandleLeadDistance);
+                Quaternion stable = Quaternion.LookRotation(dir);
+                Quaternion handleLead = Quaternion.LookRotation(-dir);
+                desired = Quaternion.Slerp(stable, handleLead, leadT);
+            }
+            else
+            {
+                float flipT = Mathf.Clamp01(m_returnTime / FlipTime);
+                desired = Quaternion.LookRotation(dir) * Quaternion.Euler(360f * flipT, 0f, 0f);
+            }
+            transform.rotation = Quaternion.Slerp(transform.rotation, desired, 14f * Time.deltaTime);
         }
 
-        /// <summary>Plays the unarmed "reach out" animation so the catch reads as grabbing.</summary>
+        /// <summary>Plays the "interact" reach-out gesture so the catch reads as grabbing.</summary>
         private void PlayReach()
         {
             m_reachPlayed = true;
             try
             {
                 var humanoid = m_owner as Humanoid;
-                if (humanoid != null && humanoid.m_unarmedWeapon != null)
+                if (humanoid != null)
                 {
-                    string anim = humanoid.m_unarmedWeapon.m_itemData.m_shared.m_attack.m_attackAnimation;
-                    if (!string.IsNullOrEmpty(anim))
+                    var zanim = humanoid.GetZAnim();
+                    if (zanim != null)
                     {
-                        var zanim = humanoid.GetZAnim();
-                        if (zanim != null)
-                        {
-                            zanim.SetTrigger(anim + "0");
-                            MjolnirPlugin.FileLog("reach animation: " + anim);
-                        }
+                        zanim.SetTrigger("interact");
+                        MjolnirPlugin.FileLog("reach animation: interact");
                     }
                 }
             }
@@ -278,12 +287,21 @@ namespace Mjolnir
                         MjolnirPlugin.FileLog("catch: returned to inventory");
                         try
                         {
-                            player.EquipItem(m_item, true);
-                            MjolnirPlugin.FileLog("catch: equipped to hand");
+                            if (player.EquipItem(m_item, true))
+                            {
+                                MjolnirPlugin.FileLog("catch: equipped to hand");
+                            }
+                            else
+                            {
+                                // EquipItem refuses while InAttack/InDodge etc. - retry shortly.
+                                MjolnirPlugin.FileLog("catch: equip deferred (busy)");
+                                MjolnirPlugin.TryEquipLater(m_item);
+                            }
                         }
                         catch (System.Exception e)
                         {
                             MjolnirPlugin.FileLog("equip failed: " + e.Message);
+                            MjolnirPlugin.TryEquipLater(m_item);
                         }
                     }
                     else
