@@ -10,8 +10,10 @@ namespace Gungnir
     [HarmonyPatch(typeof(Projectile), nameof(Projectile.Setup))]
     internal static class PatchProjectileSetup
     {
-        [HarmonyPostfix]
-        private static void Postfix(Projectile __instance, Character owner, ItemDrop.ItemData item)
+        // MUST be a Prefix: vanilla Setup reads m_respawnItemOnHit and stores m_spawnItem
+        // inside its own body. A postfix runs too late - the item still drops on hit (duplicate bug).
+        [HarmonyPrefix]
+        private static void Prefix(Projectile __instance, Character owner, ItemDrop.ItemData item)
         {
             try
             {
@@ -19,6 +21,7 @@ namespace Gungnir
                 if (item.m_shared.m_name != GungnirPlugin.ItemNameToken) return;
 
                 __instance.m_respawnItemOnHit = false;
+                __instance.m_spawnItem = null;
                 __instance.m_stayAfterHitStatic = true;
                 __instance.m_stayAfterHitDynamic = true;
                 __instance.m_attachToRigidBody = false;

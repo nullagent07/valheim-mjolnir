@@ -17,10 +17,11 @@ namespace Gungnir
 
         private const float MaxFlyTime = 6f;
         private const float ReturnDelay = 0.3f;
-        private const float ReturnSpeedMin = 10f;
-        private const float ReturnSpeedMax = 28f;
+        private const float ReturnSpeedMin = 6f;
+        private const float ReturnSpeedMax = 26f;
         private const float CatchDistance = 1.6f;
-        private const float AccelTime = 1.2f;
+        private const float AccelTime = 1.5f;
+        private const float SpinSpeed = 900f;
 
         private State m_state = State.Flying;
         private Character m_owner;
@@ -138,6 +139,8 @@ namespace Gungnir
             if (dir.sqrMagnitude > 0.0001f)
             {
                 transform.rotation = Quaternion.LookRotation(dir);
+                // tumble the spear while it flies back so the return reads as an animation
+                transform.Rotate(Vector3.right, SpinSpeed * Time.deltaTime, Space.Self);
             }
         }
 
@@ -166,7 +169,7 @@ namespace Gungnir
                 {
                     GungnirPlugin.FileLog("catch: already in inventory (no duplicate)");
                 }
-                player.Message(MessageHud.MessageType.TopLeft, GungnirPlugin.ItemNameToken, 0,
+                player.Message(MessageHud.MessageType.TopLeft, GungnirPlugin.MsgReturnedToken, 0,
                     m_item != null ? m_item.GetIcon() : null);
             }
             else

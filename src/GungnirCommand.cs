@@ -8,17 +8,22 @@ namespace Gungnir
     public class GungnirCommand : ConsoleCommand
     {
         public override string Name => "gungnir";
-        public override string Help => "gungnir give - add Gungnir to your inventory";
+        public override string Help => "gungnir give - add Gungnir to your inventory; gungnir clean - remove world drops of Gungnir";
 
         public override void Run(string[] args)
         {
-            if (args.Length >= 1 && args[0].ToLowerInvariant() == "give")
+            string sub = args.Length >= 1 ? args[0].ToLowerInvariant() : "";
+            switch (sub)
             {
-                GungnirPlugin.GiveToLocalPlayer();
-            }
-            else
-            {
-                GungnirPlugin.FileLog(Help);
+                case "give":
+                    GungnirPlugin.GiveToLocalPlayer();
+                    break;
+                case "clean":
+                    GungnirPlugin.CleanWorldDrops();
+                    break;
+                default:
+                    GungnirPlugin.FileLog(Help);
+                    break;
             }
         }
     }

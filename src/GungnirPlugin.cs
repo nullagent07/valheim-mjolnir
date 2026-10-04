@@ -19,11 +19,12 @@ namespace Gungnir
     {
         public const string PluginGuid = "morovin.gungnir";
         public const string PluginName = "Gungnir - returning spear";
-        public const string PluginVersion = "0.1.0";
+        public const string PluginVersion = "0.1.1";
 
         public const string ItemPrefabName = "Gungnir";
         public const string ItemNameToken = "$item_gungnir";
         public const string ItemDescToken = "$item_gungnir_desc";
+        public const string MsgReturnedToken = "$msg_gungnir_returned";
 
         internal static GungnirPlugin Instance;
         internal static string PersistentDir;
@@ -78,6 +79,8 @@ namespace Gungnir
                 loc.AddTranslation("Russian", "item_gungnir", "Гунгнир");
                 loc.AddTranslation("Russian", "item_gungnir_desc",
                     "Копьё Всеотца. Брось его — оно всегда возвращается в руку.");
+                loc.AddTranslation("English", "msg_gungnir_returned", "Gungnir returns to your hand!");
+                loc.AddTranslation("Russian", "msg_gungnir_returned", "Гунгнир возвращается в руку!");
                 FileLog("localization added (English/Russian)");
             }
             catch (Exception e)
@@ -183,6 +186,52 @@ namespace Gungnir
             {
                 var icon = prefab.GetComponent<ItemDrop>().m_itemData.GetIcon();
                 player.Message(MessageHud.MessageType.TopLeft, ItemNameToken, 1, icon);
+            }
+        }
+
+        /// <summary>
+        /// Removes Gungnir item drops lying in the world (duplicates from the v0.1.0 drop bug
+        /// or lost spears). The flying projectile is not an ItemDrop, so it is never touched.
+        /// </summary>
+        internal static void CleanWorldDrops()
+        {
+            try
+            {
+                if (ZNetScene.instance == null)
+                {
+                    FileLog("clean: no ZNetScene (not in world)");
+                    return;
+                }
+                var field = AccessTools.Field(typeof(ZNetScene), "m_instances");
+                var dict = field != null ? field.GetValue(ZNetScene.instance) as System.Collections.IDictionary : null;
+                if (dict == null)
+                {
+                    FileLog("clean: ZNetScene.m_instances not accessible");
+                    return;
+                }
+
+                var toDestroy = new System.Collections.Generic.List<GameObject>();
+                foreach (System.Collections.DictionaryEntry entry in dict)
+                {
+                    var nview = entry.Value as ZNetView;
+                    if (nview == null) continue;
+                    var drop = nview.GetComponent<ItemDrop>();
+                    if (drop != null && drop.m_itemData != null && drop.m_itemData.m_shared != null
+                        && drop.m_itemData.m_shared.m_name == ItemNameToken)
+                    {
+                        toDestroy.Add(drop.gameObject);
+                    }
+                }
+
+                foreach (var go in toDestroy)
+                {
+                    ZNetScene.instance.Destroy(go);
+                }
+                FileLog("clean: destroyed " + toDestroy.Count + " world Gungnir drop(s)");
+            }
+            catch (Exception e)
+            {
+                FileLog("clean error: " + e);
             }
         }
     }

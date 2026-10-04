@@ -36,6 +36,9 @@ namespace Gungnir
                         case "give":
                             GungnirPlugin.GiveToLocalPlayer();
                             break;
+                        case "clean":
+                            GungnirPlugin.CleanWorldDrops();
+                            break;
                         case "ping":
                             GungnirPlugin.FileLog("pong");
                             break;
