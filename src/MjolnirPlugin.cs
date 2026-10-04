@@ -22,7 +22,7 @@ namespace Mjolnir
     {
         public const string PluginGuid = "morovin.mjolnir";
         public const string PluginName = "Mjolnir - returning thunder hammer";
-        public const string PluginVersion = "0.3.2";
+        public const string PluginVersion = "0.3.3";
 
         public const string ItemPrefabName = "Mjolnir";
         public const string ItemNameToken = "$item_mjolnir";

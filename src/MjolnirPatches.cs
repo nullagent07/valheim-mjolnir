@@ -86,9 +86,9 @@ namespace Mjolnir
                 if (!unarmed) return true;
 
                 var deployed = MjolnirProjectile.Current;
-                if (deployed != null && deployed.TrySummon(player))
+                if (deployed != null && deployed.OnRecallPress(player))
                 {
-                    return false; // consume the press: the hammer is coming back
+                    return false; // consumed: recall or in-flight grab (no kick)
                 }
             }
             catch (System.Exception e)

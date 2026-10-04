@@ -29,6 +29,8 @@ namespace Mjolnir
         private const float SummonMaxDistance = 100f;
         private const float SummonCloseDistance = 3f;
         private const float SummonCosAngle = 0.906f; // ~25 degrees of the crosshair
+        private const float ReachDistance = 3f;      // play the "reach out" animation this close
+        private const float EarlyCatchDistance = 4.5f; // a wheel press this close grabs it early
 
         /// <summary>The currently deployed hammer (one per client).</summary>
         internal static MjolnirProjectile Current;
@@ -43,6 +45,7 @@ namespace Mjolnir
         private float m_returnTime;
         private float m_returnStartAt;
         private float m_spinAngle;
+        private bool m_reachPlayed;
 
         internal static void Attach(GameObject go, Character owner, ItemDrop.ItemData item)
         {
@@ -113,6 +116,33 @@ namespace Mjolnir
             return true;
         }
 
+        /// <summary>
+        /// Called from the StartAttack prefix on every unarmed secondary press while a Mjolnir is out.
+        /// Returns true when the press is consumed by the mod (no vanilla kick).
+        /// </summary>
+        public bool OnRecallPress(Player player)
+        {
+            if (m_owner == null || m_owner != player) return false;
+
+            if (m_state == State.Lying)
+            {
+                // only consume when actually recalled; a missed aim keeps the vanilla kick
+                return TrySummon(player);
+            }
+            if (m_state == State.Returning)
+            {
+                // grab it early when it's close, and never kick while it's flying back
+                Vector3 delta = transform.position - CatchPoint();
+                if (delta.magnitude <= EarlyCatchDistance)
+                {
+                    PlayReach();
+                    Catch();
+                }
+                return true;
+            }
+            return false; // still flying out after the throw: vanilla kick is fine
+        }
+
         private void Update()
         {
             try
@@ -149,6 +179,7 @@ namespace Mjolnir
             m_returnStartAt = Time.time + ReturnDelay;
             m_returnTime = 0f;
             m_spinAngle = 0f;
+            m_reachPlayed = false;
             if (m_projectile != null)
             {
                 m_projectile.enabled = false;
@@ -192,11 +223,43 @@ namespace Mjolnir
             float approach = Mathf.Clamp01(dist / ApproachDistance);
             speed = Mathf.Lerp(ApproachSpeed, speed, approach); // gentle final approach into the hand
 
+            if (!m_reachPlayed && dist <= ReachDistance)
+            {
+                PlayReach(); // the character extends the hand to grab it
+            }
+
             Vector3 dir = delta / dist;
             transform.position += dir * speed * Time.deltaTime;
 
             m_spinAngle += SpinSpeed * Time.deltaTime;
             transform.rotation = Quaternion.LookRotation(dir) * Quaternion.Euler(m_spinAngle, 0f, 0f);
+        }
+
+        /// <summary>Plays the unarmed "reach out" animation so the catch reads as grabbing.</summary>
+        private void PlayReach()
+        {
+            m_reachPlayed = true;
+            try
+            {
+                var humanoid = m_owner as Humanoid;
+                if (humanoid != null && humanoid.m_unarmedWeapon != null)
+                {
+                    string anim = humanoid.m_unarmedWeapon.m_itemData.m_shared.m_attack.m_attackAnimation;
+                    if (!string.IsNullOrEmpty(anim))
+                    {
+                        var zanim = humanoid.GetZAnim();
+                        if (zanim != null)
+                        {
+                            zanim.SetTrigger(anim + "0");
+                            MjolnirPlugin.FileLog("reach animation: " + anim);
+                        }
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                MjolnirPlugin.FileLog("reach anim failed: " + e.Message);
+            }
         }
 
         private void Catch()
