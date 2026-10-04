@@ -22,7 +22,7 @@ namespace Mjolnir
     {
         public const string PluginGuid = "morovin.mjolnir";
         public const string PluginName = "Mjolnir - returning thunder hammer";
-        public const string PluginVersion = "0.3.4";
+        public const string PluginVersion = "1.0.0";
 
         public const string ItemPrefabName = "Mjolnir";
         public const string ItemNameToken = "$item_mjolnir";
@@ -31,11 +31,6 @@ namespace Mjolnir
         public const string MsgDeployedToken = "$msg_mjolnir_deployed";
         public const string MsgRecallToken = "$msg_mjolnir_recall";
         public const string MsgRestyledToken = "$msg_mjolnir_restyled";
-
-        // Temporary shim: keep old Gungnir prefabs resolvable so `clean` can remove
-        // the leftover world drops / inventory items from v0.1.x. Remove in a later version.
-        public const string GungnirPrefabName = "Gungnir";
-        public const string GungnirToken = "$item_gungnir";
 
         internal static MjolnirPlugin Instance;
         internal static string PersistentDir;
@@ -102,12 +97,6 @@ namespace Mjolnir
                 loc.AddTranslation("Russian", "msg_mjolnir_recall", "Мьёльнир возвращается!");
                 loc.AddTranslation("English", "msg_mjolnir_restyled", "Mjölnir's look updated - re-equip it to see.");
                 loc.AddTranslation("Russian", "msg_mjolnir_restyled", "Вид Мьёльнира обновлён — переснарядись, чтобы увидеть.");
-
-                // old Gungnir shim strings
-                loc.AddTranslation("English", "item_gungnir", "Gungnir (old)");
-                loc.AddTranslation("English", "item_gungnir_desc", "Old returning spear. Leftover item, clean it up.");
-                loc.AddTranslation("Russian", "item_gungnir", "Гунгнир (старый)");
-                loc.AddTranslation("Russian", "item_gungnir_desc", "Старое возвращающееся копьё. Остаток, можно убрать.");
                 FileLog("localization added (English/Russian)");
             }
             catch (Exception e)
@@ -155,7 +144,16 @@ namespace Mjolnir
                 {
                     Name = ItemNameToken,
                     Description = ItemDescToken,
+                    CraftingStation = "Forge",
+                    RepairStation = "Forge",
+                    MinStationLevel = 3,
                 };
+                // Frostner's own recipe (it IS the MaceSilver line), so Mjolnir is craftable
+                // with the classic materials at a level-3 forge.
+                config.AddRequirement("ElderBark", 10);
+                config.AddRequirement("Silver", 30, 15);
+                config.AddRequirement("YmirRemains", 5);
+                config.AddRequirement("FreezeGland", 5);
 
                 var item = new CustomItem(ItemPrefabName, baseName, config);
                 if (!ItemManager.Instance.AddItem(item))
@@ -245,8 +243,6 @@ namespace Mjolnir
                     AppendEffect(shared.m_secondaryAttack.m_hitEffect, "fx_lightningweapon_hit");
                 }
                 AppendEffect(shared.m_hitEffect, "fx_lightningweapon_hit");
-
-                CreateGungnirShim();
 
                 s_itemCreated = true;
             }
@@ -495,29 +491,6 @@ namespace Mjolnir
             }
         }
 
-        /// <summary>Temporary: lets old Gungnir drops/items resolve so `clean` can remove them.</summary>
-        private static void CreateGungnirShim()
-        {
-            try
-            {
-                if (ItemManager.Instance.GetItem(GungnirPrefabName) != null) return;
-                string baseSpear = FirstAvailable("SpearCarapace", "SpearWolfFang", "SpearFlint");
-                if (baseSpear == null)
-                {
-                    FileLog("gungnir shim: no base spear available");
-                    return;
-                }
-                var cfg = new ItemConfig { Name = GungnirToken, Description = "$item_gungnir_desc" };
-                var shim = new CustomItem(GungnirPrefabName, baseSpear, cfg);
-                if (ItemManager.Instance.AddItem(shim)) FileLog("gungnir cleanup shim created from " + baseSpear);
-                else FileLog("gungnir cleanup shim: AddItem failed");
-            }
-            catch (Exception e)
-            {
-                FileLog("shim error: " + e);
-            }
-        }
-
         internal static void FileLog(string msg)
         {
             try
@@ -592,8 +565,8 @@ namespace Mjolnir
         }
 
         /// <summary>
-        /// Removes leftover world drops of Mjolnir and old Gungnir, plus old Gungnir items
-        /// in the local inventory. The flying projectile is not an ItemDrop, so it is never touched.
+        /// Removes leftover Mjolnir world drops. The flying projectile is not an ItemDrop,
+        /// so it is never touched.
         /// </summary>
         internal static void CleanWorldDrops()
         {
@@ -614,7 +587,7 @@ namespace Mjolnir
                             var drop = nview.GetComponent<ItemDrop>();
                             if (drop == null || drop.m_itemData == null || drop.m_itemData.m_shared == null) continue;
                             string n = drop.m_itemData.m_shared.m_name;
-                            if (n == ItemNameToken || n == GungnirToken) toDestroy.Add(drop.gameObject);
+                            if (n == ItemNameToken) toDestroy.Add(drop.gameObject);
                         }
                         foreach (var go in toDestroy)
                         {
@@ -631,24 +604,7 @@ namespace Mjolnir
                 {
                     FileLog("clean: no ZNetScene (not in world?)");
                 }
-
-                int invCount = 0;
-                var player = Player.m_localPlayer;
-                if (player != null)
-                {
-                    var inv = player.GetInventory();
-                    var toRemove = new List<ItemDrop.ItemData>();
-                    foreach (var it in inv.GetAllItems())
-                    {
-                        if (it != null && it.m_shared != null && it.m_shared.m_name == GungnirToken) toRemove.Add(it);
-                    }
-                    foreach (var it in toRemove)
-                    {
-                        inv.RemoveItem(it);
-                        invCount++;
-                    }
-                }
-                FileLog($"clean: destroyed {worldCount} world drop(s), removed {invCount} old Gungnir item(s) from inventory");
+                FileLog($"clean: destroyed {worldCount} world drop(s)");
             }
             catch (Exception e)
             {
