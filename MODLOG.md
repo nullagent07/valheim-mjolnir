@@ -81,6 +81,7 @@
 - [ ] тест v0.2 в игре
 - [ ] полировка: иконка/модель, звук броска, рецепт крафта
 - [ ] демо-видео, публикация (Thunderstore), field note в базу знаний universal-modder
+- [x] 2026-10-05: опубликовано — GitHub https://github.com/nullagent07/valheim-mjolnir (релиз v2.0.0 с пакетом), Thunderstore-пакет готов (dist/Mjolnir_ReturningThunderHammer-2.0.0.zip, publish check PASS), field note + PR: https://github.com/rehan-remade/universal-modder/pull/51
 
 ## Готчи (накоплено)
 
