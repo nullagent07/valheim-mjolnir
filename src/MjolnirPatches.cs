@@ -18,7 +18,8 @@ namespace Mjolnir
             try
             {
                 if (item == null || item.m_shared == null) return;
-                if (item.m_shared.m_name != MjolnirPlugin.ItemNameToken) return;
+                bool isFrostner = item.m_dropPrefab != null && item.m_dropPrefab.name == MjolnirPlugin.FrostnerPrefabName;
+                if (!isFrostner) return;
 
                 __instance.m_respawnItemOnHit = false;
                 __instance.m_spawnItem = null;

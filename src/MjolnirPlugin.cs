@@ -3,17 +3,15 @@ using System.Collections.Generic;
 using System.IO;
 using BepInEx;
 using HarmonyLib;
-using Jotunn.Configs;
-using Jotunn.Entities;
 using Jotunn.Managers;
 using UnityEngine;
 
 namespace Mjolnir
 {
     /// <summary>
-    /// Mjolnir — a thunder hammer that returns to the thrower's hand.
-    /// Built on a vanilla sledge hammer (SledgeDemolisher), with the lightning throw
-    /// of the Splitner spear (projectile_splitner_lightning) and a re-skinned projectile.
+    /// Mjolnir — a rework of the vanilla Frostner (Ледомор, prefab MaceSilver).
+    /// The Frostner itself becomes the thunder hammer: throw it with the secondary attack,
+    /// aim at it and press secondary attack again - it returns to the hand.
     /// BepInEx 5 + Jotunn plugin for Valheim 1.0 (Unity 6, Mono).
     /// </summary>
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
@@ -21,12 +19,12 @@ namespace Mjolnir
     public class MjolnirPlugin : BaseUnityPlugin
     {
         public const string PluginGuid = "morovin.mjolnir";
-        public const string PluginName = "Mjolnir - returning thunder hammer";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginName = "Mjolnir - Frostner rework (returning thunder hammer)";
+        public const string PluginVersion = "2.0.0";
 
-        public const string ItemPrefabName = "Mjolnir";
-        public const string ItemNameToken = "$item_mjolnir";
-        public const string ItemDescToken = "$item_mjolnir_desc";
+        /// <summary>The vanilla Frostner (Ледомор) prefab - the mod reworks this exact item.</summary>
+        public const string FrostnerPrefabName = "MaceSilver";
+
         public const string MsgReturnedToken = "$msg_mjolnir_returned";
         public const string MsgDeployedToken = "$msg_mjolnir_deployed";
         public const string MsgRecallToken = "$msg_mjolnir_recall";
@@ -37,7 +35,7 @@ namespace Mjolnir
         internal static string LogPath;
         internal static string CmdPath;
 
-        private static bool s_itemCreated;
+        private static bool s_done;
         private static GameObject s_itemPrefab;
         private static GameObject s_projectilePrefab;
         private static ItemDrop.ItemData s_pendingEquipItem;
@@ -63,8 +61,8 @@ namespace Mjolnir
             host.AddComponent<MjolnirHost>();
 
             AddLocalizations();
-            TryCreateItem();
-            PrefabManager.OnVanillaPrefabsAvailable += TryCreateItem;
+            TryModifyFrostner();
+            PrefabManager.OnVanillaPrefabsAvailable += TryModifyFrostner;
 
             CommandManager.Instance.AddConsoleCommand(new MjolnirCommand());
 
@@ -73,7 +71,7 @@ namespace Mjolnir
 
         private void OnDestroy()
         {
-            PrefabManager.OnVanillaPrefabsAvailable -= TryCreateItem;
+            PrefabManager.OnVanillaPrefabsAvailable -= TryModifyFrostner;
             m_harmony?.UnpatchSelf();
             FileLog("OnDestroy");
         }
@@ -83,12 +81,6 @@ namespace Mjolnir
             try
             {
                 var loc = LocalizationManager.Instance.GetLocalization();
-                loc.AddTranslation("English", "item_mjolnir", "Mjölnir");
-                loc.AddTranslation("English", "item_mjolnir_desc",
-                    "The hammer of Thor. It strikes with lightning and always returns to the hand that threw it.");
-                loc.AddTranslation("Russian", "item_mjolnir", "Мьёльнир");
-                loc.AddTranslation("Russian", "item_mjolnir_desc",
-                    "Молот Тора. Бьёт молниями и всегда возвращается в руку бросившему.");
                 loc.AddTranslation("English", "msg_mjolnir_returned", "Mjölnir returns to your hand!");
                 loc.AddTranslation("Russian", "msg_mjolnir_returned", "Мьёльнир возвращается в руку!");
                 loc.AddTranslation("English", "msg_mjolnir_deployed", "Mjölnir awaits your call. Aim at it and press secondary attack.");
@@ -105,15 +97,6 @@ namespace Mjolnir
             }
         }
 
-        private static string FirstAvailable(params string[] names)
-        {
-            foreach (string n in names)
-            {
-                if (PrefabManager.Instance.GetPrefab(n) != null) return n;
-            }
-            return null;
-        }
-
         private static Attack PickThrow(ItemDrop.ItemData.SharedData sh)
         {
             if (sh.m_secondaryAttack != null && sh.m_secondaryAttack.m_attackProjectile != null) return sh.m_secondaryAttack;
@@ -121,50 +104,30 @@ namespace Mjolnir
             return null;
         }
 
-        private static void TryCreateItem()
+        /// <summary>
+        /// Reworks the vanilla Frostner prefab itself: lightning damage, a throwing secondary
+        /// attack (copied from the Splitner lightning spear) and the returning projectile.
+        /// </summary>
+        private static void TryModifyFrostner()
         {
-            if (s_itemCreated) return;
+            if (s_done) return;
             try
             {
-                if (ItemManager.Instance.GetItem(ItemPrefabName) != null)
+                var frostner = PrefabManager.Instance.GetPrefab(FrostnerPrefabName);
+                if (frostner == null)
                 {
-                    s_itemCreated = true;
+                    FileLog("MaceSilver (Frostner) not available yet");
                     return;
                 }
-
-                // Frostner (Ледомор) is internally named MaceSilver - the "silver mace" IS Frostner.
-                string baseName = FirstAvailable("MaceSilver", "MaceEldner", "MaceIron", "SledgeDemolisher");
-                if (baseName == null)
+                var drop = frostner.GetComponent<ItemDrop>();
+                if (drop == null || drop.m_itemData == null || drop.m_itemData.m_shared == null)
                 {
-                    FileLog("no base hammer/mace available yet");
+                    FileLog("MaceSilver has no ItemDrop/SharedData");
+                    s_done = true;
                     return;
                 }
-
-                var config = new ItemConfig
-                {
-                    Name = ItemNameToken,
-                    Description = ItemDescToken,
-                    CraftingStation = "Forge",
-                    RepairStation = "Forge",
-                    MinStationLevel = 3,
-                };
-                // Frostner's own recipe (it IS the MaceSilver line), so Mjolnir is craftable
-                // with the classic materials at a level-3 forge.
-                config.AddRequirement("ElderBark", 10);
-                config.AddRequirement("Silver", 30, 15);
-                config.AddRequirement("YmirRemains", 5);
-                config.AddRequirement("FreezeGland", 5);
-
-                var item = new CustomItem(ItemPrefabName, baseName, config);
-                if (!ItemManager.Instance.AddItem(item))
-                {
-                    FileLog("AddItem failed for base " + baseName);
-                    return;
-                }
-                FileLog("Mjolnir item created from " + baseName);
-                s_itemPrefab = item.ItemDrop.gameObject;
-
-                var shared = item.ItemDrop.m_itemData.m_shared;
+                var shared = drop.m_itemData.m_shared;
+                FileLog("Frostner (MaceSilver) found - reworking into Mjolnir...");
 
                 // --- secondary attack: lightning throw, copied from a throwing spear ---
                 Attack source = null;
@@ -173,8 +136,8 @@ namespace Mjolnir
                 {
                     var go = PrefabManager.Instance.GetPrefab(spear);
                     if (go == null) continue;
-                    var drop = go.GetComponent<ItemDrop>();
-                    var sh = drop != null ? drop.m_itemData?.m_shared : null;
+                    var spearDrop = go.GetComponent<ItemDrop>();
+                    var sh = spearDrop != null ? spearDrop.m_itemData?.m_shared : null;
                     if (sh == null) continue;
                     Attack a = PickThrow(sh);
                     if (a != null)
@@ -199,27 +162,26 @@ namespace Mjolnir
                 }
                 else
                 {
-                    FileLog("WARNING: no throwing spear found - Mjolnir cannot be thrown");
+                    FileLog("WARNING: no throwing spear found - Frostner cannot be thrown");
                 }
 
-                // --- projectile: clone the lightning projectile and re-skin it as a hammer ---
+                // --- projectile: clone the lightning projectile and re-skin it as the Frostner hammer ---
                 if (shared.m_secondaryAttack != null && shared.m_secondaryAttack.m_attackProjectile != null)
                 {
                     var projSrc = shared.m_secondaryAttack.m_attackProjectile;
                     var projClone = PrefabManager.Instance.CreateClonedPrefab("mjolnir_projectile", projSrc);
                     if (projClone != null)
                     {
-                        ReskinProjectile(projClone, item.ItemDrop.gameObject);
+                        ReskinProjectile(projClone, frostner);
                         var projComp = projClone.GetComponent<Projectile>();
                         if (projComp != null)
                         {
-                            AppendEffect(projComp.m_hitEffects, "demolisher_shockwave");
                             AppendEffect(projComp.m_hitEffects, "fx_lightningweapon_hit");
                         }
                         PrefabManager.Instance.AddPrefab(projClone);
                         s_projectilePrefab = projClone;
                         shared.m_secondaryAttack.m_attackProjectile = projClone;
-                        FileLog("mjolnir_projectile created from " + projSrc.name + " and registered (impact wave added)");
+                        FileLog("mjolnir_projectile created from " + projSrc.name + " and registered");
                     }
                     else
                     {
@@ -227,7 +189,7 @@ namespace Mjolnir
                     }
                 }
 
-                // --- lightning damage on top of the base weapon (Frostner: blunt/frost/spirit) ---
+                // --- thunder power (Frostner keeps its frost/spirit) ---
                 shared.m_damages.m_lightning = Mathf.Max(shared.m_damages.m_lightning, 30f);
                 shared.m_damages.m_blunt = Mathf.Max(shared.m_damages.m_blunt, 60f);
                 FileLog($"damage: blunt={shared.m_damages.m_blunt} frost={shared.m_damages.m_frost} spirit={shared.m_damages.m_spirit} lightning={shared.m_damages.m_lightning}");
@@ -244,46 +206,13 @@ namespace Mjolnir
                 }
                 AppendEffect(shared.m_hitEffect, "fx_lightningweapon_hit");
 
-                s_itemCreated = true;
+                s_itemPrefab = frostner;
+                s_done = true;
             }
             catch (Exception e)
             {
-                FileLog("TryCreateItem exception: " + e);
+                FileLog("TryModifyFrostner exception: " + e);
             }
-        }
-
-        /// <summary>Case-insensitive prefab lookup over the live ZNetScene / ObjectDB (fields are private, so via reflection).</summary>
-        private static GameObject FindPrefabIgnoreCase(string name)
-        {
-            try
-            {
-                var znsField = AccessTools.Field(typeof(ZNetScene), "m_namedPrefabs");
-                if (ZNetScene.instance != null && znsField != null
-                    && znsField.GetValue(ZNetScene.instance) is System.Collections.IDictionary znsDict)
-                {
-                    foreach (System.Collections.DictionaryEntry entry in znsDict)
-                    {
-                        var go = entry.Value as GameObject;
-                        if (go != null && string.Equals(go.name, name, StringComparison.OrdinalIgnoreCase)) return go;
-                    }
-                }
-
-                var odbField = AccessTools.Field(typeof(ObjectDB), "m_itemByHash");
-                if (ObjectDB.instance != null && odbField != null
-                    && odbField.GetValue(ObjectDB.instance) is System.Collections.IDictionary odbDict)
-                {
-                    foreach (System.Collections.DictionaryEntry entry in odbDict)
-                    {
-                        var go = entry.Value as GameObject;
-                        if (go != null && string.Equals(go.name, name, StringComparison.OrdinalIgnoreCase)) return go;
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                FileLog("FindPrefabIgnoreCase error: " + e.Message);
-            }
-            return null;
         }
 
         /// <summary>Gets the weapon's actual model root: the attach/attachobj child, or null.</summary>
@@ -449,6 +378,40 @@ namespace Mjolnir
             }
         }
 
+        /// <summary>Case-insensitive prefab lookup over the live ZNetScene / ObjectDB (fields are private, so via reflection).</summary>
+        private static GameObject FindPrefabIgnoreCase(string name)
+        {
+            try
+            {
+                var znsField = AccessTools.Field(typeof(ZNetScene), "m_namedPrefabs");
+                if (ZNetScene.instance != null && znsField != null
+                    && znsField.GetValue(ZNetScene.instance) is System.Collections.IDictionary znsDict)
+                {
+                    foreach (System.Collections.DictionaryEntry entry in znsDict)
+                    {
+                        var go = entry.Value as GameObject;
+                        if (go != null && string.Equals(go.name, name, StringComparison.OrdinalIgnoreCase)) return go;
+                    }
+                }
+
+                var odbField = AccessTools.Field(typeof(ObjectDB), "m_itemByHash");
+                if (ObjectDB.instance != null && odbField != null
+                    && odbField.GetValue(ObjectDB.instance) is System.Collections.IDictionary odbDict)
+                {
+                    foreach (System.Collections.DictionaryEntry entry in odbDict)
+                    {
+                        var go = entry.Value as GameObject;
+                        if (go != null && string.Equals(go.name, name, StringComparison.OrdinalIgnoreCase)) return go;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                FileLog("FindPrefabIgnoreCase error: " + e.Message);
+            }
+            return null;
+        }
+
         /// <summary>Appends a vanilla effect prefab to an EffectList (sparks, trails...).</summary>
         private static void AppendEffect(EffectList list, string prefabName)
         {
@@ -540,6 +503,7 @@ namespace Mjolnir
             }
         }
 
+        /// <summary>Gives the (reworked) Frostner to the local player.</summary>
         internal static void GiveToLocalPlayer()
         {
             var player = Player.m_localPlayer;
@@ -548,10 +512,10 @@ namespace Mjolnir
                 FileLog("give: no local player (not in world yet?)");
                 return;
             }
-            var prefab = ObjectDB.instance != null ? ObjectDB.instance.GetItemPrefab(ItemPrefabName) : null;
+            var prefab = ObjectDB.instance != null ? ObjectDB.instance.GetItemPrefab(FrostnerPrefabName) : null;
             if (prefab == null)
             {
-                FileLog("give: prefab " + ItemPrefabName + " is not registered (not in world yet?)");
+                FileLog("give: prefab " + FrostnerPrefabName + " is not registered (not in world yet?)");
                 return;
             }
 
@@ -559,56 +523,10 @@ namespace Mjolnir
             FileLog("give: AddItem -> " + ok);
             if (ok)
             {
-                var icon = prefab.GetComponent<ItemDrop>().m_itemData.GetIcon();
-                player.Message(MessageHud.MessageType.TopLeft, ItemNameToken, 1, icon);
-            }
-        }
-
-        /// <summary>
-        /// Removes leftover Mjolnir world drops. The flying projectile is not an ItemDrop,
-        /// so it is never touched.
-        /// </summary>
-        internal static void CleanWorldDrops()
-        {
-            try
-            {
-                int worldCount = 0;
-                if (ZNetScene.instance != null)
-                {
-                    var field = AccessTools.Field(typeof(ZNetScene), "m_instances");
-                    var dict = field != null ? field.GetValue(ZNetScene.instance) as System.Collections.IDictionary : null;
-                    if (dict != null)
-                    {
-                        var toDestroy = new List<GameObject>();
-                        foreach (System.Collections.DictionaryEntry entry in dict)
-                        {
-                            var nview = entry.Value as ZNetView;
-                            if (nview == null) continue;
-                            var drop = nview.GetComponent<ItemDrop>();
-                            if (drop == null || drop.m_itemData == null || drop.m_itemData.m_shared == null) continue;
-                            string n = drop.m_itemData.m_shared.m_name;
-                            if (n == ItemNameToken) toDestroy.Add(drop.gameObject);
-                        }
-                        foreach (var go in toDestroy)
-                        {
-                            ZNetScene.instance.Destroy(go);
-                            worldCount++;
-                        }
-                    }
-                    else
-                    {
-                        FileLog("clean: ZNetScene.m_instances not accessible");
-                    }
-                }
-                else
-                {
-                    FileLog("clean: no ZNetScene (not in world?)");
-                }
-                FileLog($"clean: destroyed {worldCount} world drop(s)");
-            }
-            catch (Exception e)
-            {
-                FileLog("clean error: " + e);
+                var drop = prefab.GetComponent<ItemDrop>();
+                var icon = drop.m_itemData.GetIcon();
+                // the vanilla Frostner keeps its own (localized) name token
+                player.Message(MessageHud.MessageType.TopLeft, drop.m_itemData.m_shared.m_name, 1, icon);
             }
         }
     }

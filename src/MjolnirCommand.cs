@@ -8,7 +8,7 @@ namespace Mjolnir
     public class MjolnirCommand : ConsoleCommand
     {
         public override string Name => "mjolnir";
-        public override string Help => "mjolnir give | mjolnir clean | mjolnir restyle <prefab> [scale]";
+        public override string Help => "mjolnir give | mjolnir restyle <prefab> [scale]";
 
         public override void Run(string[] args)
         {
@@ -17,9 +17,6 @@ namespace Mjolnir
             {
                 case "give":
                     MjolnirPlugin.GiveToLocalPlayer();
-                    break;
-                case "clean":
-                    MjolnirPlugin.CleanWorldDrops();
                     break;
                 case "restyle":
                     if (args.Length >= 2)

@@ -40,9 +40,6 @@ namespace Mjolnir
                         case "give":
                             MjolnirPlugin.GiveToLocalPlayer();
                             break;
-                        case "clean":
-                            MjolnirPlugin.CleanWorldDrops();
-                            break;
                         case "ping":
                             MjolnirPlugin.FileLog("pong");
                             break;
