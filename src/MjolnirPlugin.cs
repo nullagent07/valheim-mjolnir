@@ -20,7 +20,7 @@ namespace Mjolnir
     {
         public const string PluginGuid = "morovin.mjolnir";
         public const string PluginName = "Mjolnir - Frostner rework (returning thunder hammer)";
-        public const string PluginVersion = "2.0.0";
+        public const string PluginVersion = "2.1.0";
 
         /// <summary>The vanilla Frostner (Ледомор) prefab - the mod reworks this exact item.</summary>
         public const string FrostnerPrefabName = "MaceSilver";
@@ -83,8 +83,8 @@ namespace Mjolnir
                 var loc = LocalizationManager.Instance.GetLocalization();
                 loc.AddTranslation("English", "msg_mjolnir_returned", "Mjölnir returns to your hand!");
                 loc.AddTranslation("Russian", "msg_mjolnir_returned", "Мьёльнир возвращается в руку!");
-                loc.AddTranslation("English", "msg_mjolnir_deployed", "Mjölnir awaits your call. Aim at it and press secondary attack.");
-                loc.AddTranslation("Russian", "msg_mjolnir_deployed", "Мьёльнир ждёт зова. Наведи на него курсор и нажми вторичную атаку.");
+                loc.AddTranslation("English", "msg_mjolnir_deployed", "Mjölnir awaits your call: secondary attack with empty hands, or its hotbar key.");
+                loc.AddTranslation("Russian", "msg_mjolnir_deployed", "Мьёльнир ждёт зова: вторичная атака пустой рукой или кнопка молота на панели.");
                 loc.AddTranslation("English", "msg_mjolnir_recall", "Mjölnir returns!");
                 loc.AddTranslation("Russian", "msg_mjolnir_recall", "Мьёльнир возвращается!");
                 loc.AddTranslation("English", "msg_mjolnir_restyled", "Mjölnir's look updated - re-equip it to see.");
@@ -157,6 +157,9 @@ namespace Mjolnir
                     shared.m_secondaryAttack.m_triggerEffect = new EffectList();
                     shared.m_secondaryAttack.m_burstEffect = new EffectList();
                     shared.m_secondaryAttack.m_trailStartEffect = new EffectList();
+                    // The hammer never leaves the inventory: the throw only empties the hand
+                    // (see PatchProjectileSetup.Postfix), the recall puts it back.
+                    shared.m_secondaryAttack.m_consumeItem = false;
                     string projName = source.m_attackProjectile != null ? source.m_attackProjectile.name : "null";
                     FileLog($"throw attack copied from {sourceName}: projectile={projName} consume={source.m_consumeItem} anim={source.m_attackAnimation} type={source.m_attackType} (launch fx cleared)");
                 }
@@ -467,6 +470,88 @@ namespace Mjolnir
             if (Instance != null)
             {
                 Instance.Logger.LogInfo(msg);
+            }
+        }
+
+        // --- "away" state: the hammer is thrown, still in the inventory, but not in the hand ---
+
+        /// <summary>The thrown hammer (an inventory item that is out of the hand), or null.</summary>
+        internal static ItemDrop.ItemData AwayItem;
+        internal static Player AwayOwner;
+
+        internal static bool IsAway(ItemDrop.ItemData item)
+        {
+            return item != null && AwayItem != null && item == AwayItem;
+        }
+
+        internal static void SetAway(Player player, ItemDrop.ItemData item)
+        {
+            AwayItem = item;
+            AwayOwner = player;
+        }
+
+        internal static void ClearAway()
+        {
+            AwayItem = null;
+            AwayOwner = null;
+        }
+
+        /// <summary>
+        /// Calls the thrown hammer back - no aiming, any distance. If the projectile no longer
+        /// exists (its area was unloaded, etc.) the hammer returns to the hand instantly.
+        /// Returns false when there is nothing to recall for this player.
+        /// </summary>
+        internal static bool Recall(Player player, string reason)
+        {
+            if (AwayItem == null || player == null) return false;
+            if (player != AwayOwner)
+            {
+                ClearAway(); // stale state from another character/session
+                return false;
+            }
+
+            var proj = MjolnirProjectile.Current;
+            if (proj != null && proj.IsAlive)
+            {
+                proj.Recall(reason);
+                return true;
+            }
+
+            var item = AwayItem;
+            ClearAway();
+            FileLog("instant return (" + reason + "): projectile is gone");
+            if (player.GetInventory().ContainsItem(item))
+            {
+                EquipNowOrLater(player, item);
+            }
+            else
+            {
+                FileLog("instant return: hammer is no longer in the inventory - nothing to equip");
+            }
+            PlayFxAt("fx_lightningweapon_hit", player.GetCenterPoint() + Vector3.up * 0.5f);
+            PlayFxAt("sfx_mistlands_thunder", player.transform.position);
+            player.Message(MessageHud.MessageType.TopLeft, MsgReturnedToken, 0, item.GetIcon());
+            return true;
+        }
+
+        internal static void EquipNowOrLater(Player player, ItemDrop.ItemData item)
+        {
+            try
+            {
+                if (player.EquipItem(item, true))
+                {
+                    FileLog("equipped to hand");
+                }
+                else
+                {
+                    FileLog("equip deferred (busy)");
+                    TryEquipLater(item);
+                }
+            }
+            catch (Exception e)
+            {
+                FileLog("equip failed: " + e.Message);
+                TryEquipLater(item);
             }
         }
 

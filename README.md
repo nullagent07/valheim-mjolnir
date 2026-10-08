@@ -3,20 +3,24 @@
 Этот мод **изменяет сам ванильный Ледомор (Frostner)** — тот самый молот из Горного биома
 (внутреннее имя `MaceSilver`) — и превращает его в Мьёльнир.
 
-Бросаешь Ледомор вторичной атакой — он бьёт молниями и остаётся лежать там, где упал.
-Наводишь на него курсор и снова жмёшь вторичную атаку — раскат грома, и молот
-возвращается в руку: один переворот при взлёте, стабильный полёт к владельцу,
-на подлёте он разворачивается **рукоятью к руке**, а персонаж тянет руку, чтобы поймать.
+Бросаешь Ледомор вторичной атакой — он летит **бойком вперёд**, как молот Тора, бьёт молниями
+и **втыкается бойком** туда, куда попал. Молот при этом остаётся в инвентаре — пустеет только рука.
+Жмёшь вторичную атаку пустой рукой (или кнопку молота на панели) — раскат грома, и молот
+возвращается с **любого расстояния, без прицеливания**: ровный полёт к владельцу, на подлёте
+он разворачивается **рукоятью к руке**, а персонаж тянет руку, чтобы поймать.
 
 Никаких новых предметов: твой существующий или скрафченный Ледомор — уже Мьёльнир.
 
 ## Возможности
 
 - Бросок Ледомора с молниевым уроном и эффектами (механика копья `SpearSplitner_Lightning`)
-- Молот ждёт зова: прицелься на лежащий молот и нажми вторичную атаку пустой рукой — он вернётся
-- Плавный возврат: переворот → полёт к владельцу → рукоять в руку → **автоэкипировка**
+- Полёт бойком вперёд (без кувырков, лёгкое вращение вокруг рукояти), втыкается бойком
+- Во время полёта молот остаётся в инвентаре — потерять или задюпать его нельзя
+- Возврат по вторичной атаке пустой рукой или по кнопке молота на панели — с любого расстояния, без прицела
+- Промах (ни во что не попал за 6 с) — молот сам летит обратно
+- Плавный возврат: полёт к владельцу → рукоять в руку → **автоэкипировка**
 - Искры молний на обычных ударах, гром и искры при возврате
-- Если целишься мимо молота — обычный удар ногой (ничего не ломается)
+- Пока молот в руке или не брошен — вторичная атака пустой рукой работает как обычно
 - Команды: `mjolnir give | restyle <префаб> [масштаб]` — модель можно менять прямо в игре
 
 ## Урон
@@ -58,10 +62,11 @@
 ## Mjölnir — Frostner rework (EN)
 
 This mod reworks the vanilla Frostner mace (internal prefab `MaceSilver`) into Mjölnir, the
-returning thunder hammer. Throw it with the secondary attack — it strikes with lightning and
-stays where it lands. Aim at it and press secondary attack again: thunder, one flip, a smooth
-flight back, and it turns handle-first into your hand with a reach-and-grab animation and
-auto-equip. No new items: your existing or crafted Frostner is Mjölnir now.
+returning thunder hammer. Throw it with the secondary attack — it flies head-first like Thor's
+hammer, strikes with lightning and sticks in head-first; it stays in your inventory while out.
+Press secondary attack with empty hands (or its hotbar key) to recall it from any distance, no
+aiming: thunder, a straight flight back, and it turns handle-first into your hand with a
+reach-and-grab animation and auto-equip. No new items: your existing or crafted Frostner is Mjölnir now.
 
 Damage: Blunt 60 + Frost 40 + Spirit 20 + Lightning 30 (one-handed, Clubs skill).
 The Frostner crafting recipe is unchanged.
