@@ -37,6 +37,63 @@ namespace Mjolnir
                 MjolnirPlugin.FileLog("Setup prefix error: " + e);
             }
         }
+
+        /// <summary>
+        /// After the throw the hammer stays in the inventory (the attack no longer consumes it)
+        /// but leaves the hand - like a weapon that is mid-attack.
+        /// </summary>
+        [HarmonyPostfix]
+        private static void Postfix(Projectile __instance, Character owner, ItemDrop.ItemData item)
+        {
+            try
+            {
+                if (item == null || __instance.GetComponent<MjolnirProjectile>() == null) return;
+                var player = owner as Player;
+                if (player == null || player != Player.m_localPlayer) return;
+
+                MjolnirPlugin.SetAway(player, item);
+                if (player.IsItemEquiped(item))
+                {
+                    player.UnequipItem(item, false);
+                }
+                MjolnirPlugin.FileLog("throw: hammer stays in inventory, hand emptied");
+            }
+            catch (System.Exception e)
+            {
+                MjolnirPlugin.FileLog("Setup postfix error: " + e);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Equipping the thrown hammer (hotbar key, inventory click) calls it back instead:
+    /// it flies into the hand and gets equipped on the catch. This also makes a second
+    /// throw impossible while the first one is still out.
+    /// </summary>
+    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
+    internal static class PatchHumanoidEquipItem
+    {
+        [HarmonyPrefix]
+        private static bool Prefix(Humanoid __instance, ItemDrop.ItemData item, ref bool __result)
+        {
+            try
+            {
+                if (!MjolnirPlugin.IsAway(item)) return true;
+                var player = __instance as Player;
+                if (player == null || player != Player.m_localPlayer) return true;
+
+                if (MjolnirPlugin.Recall(player, "equip"))
+                {
+                    __result = false;
+                    return false;
+                }
+            }
+            catch (System.Exception e)
+            {
+                MjolnirPlugin.FileLog("EquipItem prefix error: " + e);
+            }
+            return true;
+        }
     }
 
     /// <summary>
@@ -64,7 +121,8 @@ namespace Mjolnir
     }
 
     /// <summary>
-    /// While unarmed, a secondary-attack press recalls the deployed Mjolnir.
+    /// While unarmed (a shield or torch in the off hand still counts), a secondary-attack
+    /// press recalls the thrown Mjolnir - no aiming, any distance.
     /// Runs before the vanilla busy checks so the recall works even while moving.
     /// </summary>
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.StartAttack))]
@@ -86,10 +144,17 @@ namespace Mjolnir
                     || (player.m_unarmedWeapon != null && weapon == player.m_unarmedWeapon.m_itemData);
                 if (!unarmed) return true;
 
+                if (MjolnirPlugin.AwayItem == null) return true;
+
+                // grab it early when it is already flying back close to the hand
                 var deployed = MjolnirProjectile.Current;
-                if (deployed != null && deployed.OnRecallPress(player))
+                if (deployed != null && deployed.IsAlive && deployed.OnRecallPress(player))
                 {
-                    return false; // consumed: recall or in-flight grab (no kick)
+                    return false;
+                }
+                if (MjolnirPlugin.Recall(player, "secondary attack"))
+                {
+                    return false; // consumed: no kick
                 }
             }
             catch (System.Exception e)

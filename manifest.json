@@ -1,8 +1,8 @@
 {
     "name": "Mjolnir_ReturningThunderHammer",
-    "version_number": "2.0.0",
+    "version_number": "2.1.0",
     "website_url": "https://github.com/nullagent07/valheim-mjolnir",
-    "description": "Reworks the vanilla Frostner (MaceSilver) into Mjolnir, the returning thunder hammer. Throw it (secondary attack), then aim at it and press secondary attack again - thunder, one flip, a smooth flight, and it lands handle-first in your hand with auto-equip. No new items. Commands: mjolnir give / restyle.",
+    "description": "Reworks the vanilla Frostner (MaceSilver) into Mjolnir, the returning thunder hammer. Throw it (secondary attack): it flies head-first and strikes head-first; it stays in your inventory while out. Recall it from any distance without aiming (secondary attack with empty hands or its hotbar key) - it flies straight back handle-first into your hand. No new items. Commands: mjolnir give / restyle.",
     "dependencies": [
         "denikson-BepInExPack_Valheim-5.4.2351",
         "ValheimModding-Jotunn-2.30.2"
